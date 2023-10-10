@@ -41,9 +41,9 @@ int main(int argc, char** argv)
         arguments.read("--screen", windowTraits->screenNum);
         arguments.read("--display", windowTraits->display);
         arguments.read("--samples", windowTraits->samples);
-        auto outputFilename = arguments.value(std::string(), "-o");
+        auto outputFilename = arguments.value<vsg::Path>("", "-o");
         auto numFrames = arguments.value(-1, "-f");
-        auto pathFilename = arguments.value(std::string(), "-p");
+        auto pathFilename = arguments.value<vsg::Path>("", "-p");
         auto maxPagedLOD = arguments.value(0, "--maxPagedLOD");
         auto loadLevels = arguments.value(0, "--load-levels");
         auto horizonMountainHeight = arguments.value(0.0, "--hmh");
@@ -164,12 +164,12 @@ int main(int argc, char** argv)
         // add close handler to respond to the close window button and pressing escape
         viewer->addEventHandler(vsg::CloseHandler::create(viewer));
 
-        if (pathFilename.empty())
+        if (!pathFilename)
         {
             if (ellipsoidModel)
             {
                 auto trackball = vsg::Trackball::create(camera, ellipsoidModel);
-                trackball->addKeyViewpoint(vsg::KeySymbol('1'), 51.50151088842245, -0.14181489107549874, 2000.0, 2.0); // Grenwish Observatory
+                trackball->addKeyViewpoint(vsg::KeySymbol('1'), 51.50151088842245, -0.14181489107549874, 2000.0, 2.0); // Greenwich Observatory
                 trackball->addKeyViewpoint(vsg::KeySymbol('2'), 55.948642740309324, -3.199226855522667, 2000.0, 2.0);  // Edinburgh Castle
                 trackball->addKeyViewpoint(vsg::KeySymbol('3'), 48.858264952330764, 2.2945039609604665, 2000.0, 2.0);  // Eiffel Town, Paris
                 trackball->addKeyViewpoint(vsg::KeySymbol('4'), 52.5162603714634, 13.377684902745642, 2000.0, 2.0);    // Brandenburg Gate, Berlin

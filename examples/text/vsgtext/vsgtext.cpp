@@ -214,6 +214,11 @@ int main(int argc, char** argv)
     // set up model transformation node
     auto scenegraph = vsg::Group::create();
 
+    // dynamic_text is updated in the main loop when setup.
+    vsg::ref_ptr<vsg::Text> dynamic_text;
+    vsg::ref_ptr<vsg::stringValue> dynamic_text_label;
+    vsg::ref_ptr<vsg::StandardLayout> dynamic_text_layout;
+
     if (render_all_glyphs)
     {
         auto layout = vsg::StandardLayout::create();
@@ -283,8 +288,8 @@ int main(int argc, char** argv)
 
             if (enable_tests)
             {
-                auto quad = createQuad(layout->position, layout->horizontal, layout->vertical);
-                scenegraph->addChild(quad);
+                if (auto quad = createQuad(layout->position, layout->horizontal, layout->vertical))
+                    scenegraph->addChild(quad);
             }
         }
 
@@ -305,8 +310,8 @@ int main(int argc, char** argv)
 
             if (enable_tests)
             {
-                auto quad = createQuad(layout->position, layout->horizontal, layout->vertical);
-                scenegraph->addChild(quad);
+                if (auto quad = createQuad(layout->position, layout->horizontal, layout->vertical))
+                    scenegraph->addChild(quad);
             }
         }
 
@@ -327,8 +332,8 @@ int main(int argc, char** argv)
 
             if (enable_tests)
             {
-                auto quad = createQuad(layout->position, layout->horizontal, layout->vertical);
-                scenegraph->addChild(quad);
+                if (auto quad = createQuad(layout->position, layout->horizontal, layout->vertical))
+                    scenegraph->addChild(quad);
             }
         }
 
@@ -349,8 +354,8 @@ int main(int argc, char** argv)
 
             if (enable_tests)
             {
-                auto quad = createQuad(layout->position, layout->horizontal, layout->vertical);
-                scenegraph->addChild(quad);
+                if (auto quad = createQuad(layout->position, layout->horizontal, layout->vertical))
+                    scenegraph->addChild(quad);
             }
         }
 
@@ -371,8 +376,8 @@ int main(int argc, char** argv)
 
             if (enable_tests)
             {
-                auto quad = createQuad(layout->position, layout->horizontal, layout->vertical);
-                scenegraph->addChild(quad);
+                if (auto quad = createQuad(layout->position, layout->horizontal, layout->vertical))
+                    scenegraph->addChild(quad);
             }
         }
 
@@ -393,8 +398,8 @@ int main(int argc, char** argv)
 
             if (enable_tests)
             {
-                auto quad = createQuad(layout->position, layout->horizontal, layout->vertical);
-                scenegraph->addChild(quad);
+                if (auto quad = createQuad(layout->position, layout->horizontal, layout->vertical))
+                    scenegraph->addChild(quad);
             }
         }
 
@@ -415,8 +420,8 @@ int main(int argc, char** argv)
 
             if (enable_tests)
             {
-                auto quad = createQuad(layout->position, layout->horizontal, layout->vertical);
-                scenegraph->addChild(quad);
+                if (auto quad = createQuad(layout->position, layout->horizontal, layout->vertical))
+                    scenegraph->addChild(quad);
             }
         }
 
@@ -438,8 +443,8 @@ int main(int argc, char** argv)
 
             if (enable_tests)
             {
-                auto quad = createQuad(layout->position, layout->horizontal, layout->vertical);
-                scenegraph->addChild(quad);
+                if (auto quad = createQuad(layout->position, layout->horizontal, layout->vertical))
+                    scenegraph->addChild(quad);
             }
         }
 
@@ -461,8 +466,8 @@ int main(int argc, char** argv)
 
             if (enable_tests)
             {
-                auto quad = createQuad(layout->position, layout->horizontal, layout->vertical);
-                scenegraph->addChild(quad);
+                if (auto quad = createQuad(layout->position, layout->horizontal, layout->vertical))
+                    scenegraph->addChild(quad);
             }
         }
 
@@ -484,8 +489,8 @@ int main(int argc, char** argv)
 
             if (enable_tests)
             {
-                auto quad = createQuad(layout->position, layout->horizontal, layout->vertical);
-                scenegraph->addChild(quad);
+                if (auto quad = createQuad(layout->position, layout->horizontal, layout->vertical))
+                    scenegraph->addChild(quad);
             }
         }
 
@@ -525,27 +530,27 @@ int main(int argc, char** argv)
             text->setup(0, options);
             scenegraph->addChild(text);
         }
-    }
 
-    auto dynamic_text_label = vsg::stringValue::create("GpuLayoutTechnique");
-    auto dynamic_text_layout = vsg::StandardLayout::create();
-    auto dynamic_text = vsg::Text::create();
-    {
-        // currently vsg::GpuLayoutTechnique is the only technique that supports dynamic updating of the text parameters
-        dynamic_text->technique = vsg::GpuLayoutTechnique::create();
+        dynamic_text_label = vsg::stringValue::create("GpuLayoutTechnique");
+        dynamic_text_layout = vsg::StandardLayout::create();
+        dynamic_text = vsg::Text::create();
+        {
+            // currently vsg::GpuLayoutTechnique is the only technique that supports dynamic updating of the text parameters
+            dynamic_text->technique = vsg::GpuLayoutTechnique::create();
 
-        dynamic_text_layout->billboard = true;
-        dynamic_text_layout->position = vsg::vec3(0.0, 0.0, -6.0);
-        dynamic_text_layout->horizontal = vsg::vec3(1.0, 0.0, 0.0);
-        dynamic_text_layout->vertical = dynamic_text_layout->billboard ? vsg::vec3(0.0, 1.0, 0.0) : vsg::vec3(0.0, 0.0, 1.0) ;
-        dynamic_text_layout->color = vsg::vec4(1.0, 0.9, 1.0, 1.0);
-        dynamic_text_layout->outlineWidth = 0.1;
+            dynamic_text_layout->billboard = true;
+            dynamic_text_layout->position = vsg::vec3(0.0, 0.0, -6.0);
+            dynamic_text_layout->horizontal = vsg::vec3(1.0, 0.0, 0.0);
+            dynamic_text_layout->vertical = dynamic_text_layout->billboard ? vsg::vec3(0.0, 1.0, 0.0) : vsg::vec3(0.0, 0.0, 1.0) ;
+            dynamic_text_layout->color = vsg::vec4(1.0, 0.9, 1.0, 1.0);
+            dynamic_text_layout->outlineWidth = 0.1;
 
-        dynamic_text->text = dynamic_text_label;
-        dynamic_text->font = font;
-        dynamic_text->layout = dynamic_text_layout;
-        dynamic_text->setup(32); // allocate enough space for max possible characters
-        scenegraph->addChild(dynamic_text);
+            dynamic_text->text = dynamic_text_label;
+            dynamic_text->font = font;
+            dynamic_text->layout = dynamic_text_layout;
+            dynamic_text->setup(32); // allocate enough space for max possible characters
+            scenegraph->addChild(dynamic_text);
+        }
     }
 
     if (!output_filename.empty())
@@ -597,10 +602,13 @@ int main(int argc, char** argv)
     // main frame loop
     while (viewer->advanceToNextFrame() && (numFrames < 0 || (numFrames--) > 0))
     {
-        // update the dynamic_text label string and position
-        dynamic_text_label->value() = vsg::make_string("GpuLayoutTechnique: ", viewer->getFrameStamp()->frameCount);
-        dynamic_text_layout->position.x += 0.01;
-        dynamic_text->setup(0, options);
+        if (dynamic_text)
+        {
+            // update the dynamic_text label string and position
+            dynamic_text_label->value() = vsg::make_string("GpuLayoutTechnique: ", viewer->getFrameStamp()->frameCount);
+            dynamic_text_layout->position.x += 0.01;
+            dynamic_text->setup(0, options);
+        }
 
         // pass any events into EventHandlers assigned to the Viewer
         viewer->handleEvents();

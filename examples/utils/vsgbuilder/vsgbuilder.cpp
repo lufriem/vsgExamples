@@ -27,6 +27,7 @@ int main(int argc, char** argv)
     geomInfo.dx.set(1.0f, 0.0f, 0.0f);
     geomInfo.dy.set(0.0f, 1.0f, 0.0f);
     geomInfo.dz.set(0.0f, 0.0f, 1.0f);
+    geomInfo.cullNode = arguments.read("--cull");
 
     vsg::StateInfo stateInfo;
 
@@ -47,7 +48,7 @@ int main(int argc, char** argv)
 
     if (arguments.read("--shared")) options->sharedObjects = vsg::SharedObjects::create();
 
-    auto outputFilename = arguments.value<std::string>("", "-o");
+    auto outputFilename = arguments.value<vsg::Path>("", "-o");
 
     bool floatColors = !arguments.read("--ubvec4-colors");
     stateInfo.wireframe = arguments.read("--wireframe");
@@ -256,7 +257,7 @@ int main(int argc, char** argv)
     }
 
     // write out scene if required
-    if (!outputFilename.empty())
+    if (outputFilename)
     {
         vsg::write(scene, outputFilename, options);
         return 0;

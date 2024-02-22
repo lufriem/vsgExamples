@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.7)
 
 project(vsgExamples
-        VERSION 1.1.0
+        VERSION 1.1.1
         DESCRIPTION "Set of example programs that test and illustrate how to use the VulkanSceneGraph"
         LANGUAGES CXX C
 )
 
-SET(VSGEXAMPLES_RELEASE_CANDIDATE 1)
+SET(VSGEXAMPLES_RELEASE_CANDIDATE 0)
 
 # build all examples into the bin directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
@@ -21,7 +21,7 @@ if (VULKAN_SDK)
     set(ENV{VULKAN_SDK} ${VULKAN_SDK})
 endif()
 
-find_package(vsg 1.1.0)
+find_package(vsg 1.1.1)
 
 vsg_setup_dir_vars()
 vsg_setup_build_vars()
@@ -31,6 +31,8 @@ find_package(vsgXchange 1.0.5 QUIET)
 
 # find the optional vsgImGui that can be used for GUI elements added into graphics windows.
 find_package(vsgImGui QUIET)
+
+find_package(Tracy QUIET)
 
 # set the use of C++17 globally as all examples require it
 set(CMAKE_CXX_STANDARD 17)
@@ -83,5 +85,6 @@ add_subdirectory(examples/raytracing)
 add_subdirectory(examples/platform)
 add_subdirectory(examples/utils)
 add_subdirectory(examples/volume)
+add_subdirectory(examples/animation)
 
 vsg_add_feature_summary()

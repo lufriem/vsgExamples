@@ -1,3 +1,7 @@
+// Derived from vsgviewer, of course
+
+#include "Annotation.h"
+
 #include <vsg/all.h>
 
 #ifdef vsgXchange_FOUND
@@ -9,21 +13,55 @@
 #include <iostream>
 #include <thread>
 
-vsg::ref_ptr<vsg::Node> createTextureQuad(vsg::ref_ptr<vsg::Data> sourceData, vsg::ref_ptr<vsg::Options> options)
+// using NamedGroup = experimental::Annotation<vsg::Group>;
+using NamedTransform = experimental::Annotation<vsg::MatrixTransform>;
+
+// Create a custom subclass with a different display color. This illustrates a gotcha with
+// vsg::Inherit and a custom accept(RecordTraversal&): Inherit::accept() calls
+// RecordTraveral::apply(), but that is not virtual and will end up doing the recording action for
+// vsg::Group, which would leave us without an annotation.
+
+class NamedGroup : public vsg::Inherit<experimental::Annotation<vsg::Group>, NamedGroup>
 {
-    auto builder = vsg::Builder::create();
-    builder->options = options;
+public:
+    NamedGroup()
+    {
+        debugColor = vsg::vec4(.8, .8, .8, 1.0);
+    }
 
-    vsg::StateInfo state;
-    state.image = sourceData;
-    state.lighting = false;
+    using experimental::Annotation<vsg::Group>::accept;
 
-    vsg::GeometryInfo geom;
-    geom.dy.set(0.0f, 0.0f, 1.0f);
-    geom.dz.set(0.0f, -1.0f, 0.0f);
+    void accept(vsg::RecordTraversal& visitor) const override
+    {
+        experimental::Annotation<vsg::Group>::accept(visitor);
+    }
+};
 
-    return builder->createQuad(geom, state);
+// Lay out the loaded files on the X axis
+
+vsg::ref_ptr<NamedGroup> createAnnotatedScene(const std::vector<std::string>& names,
+                                              const std::vector<vsg::ref_ptr<vsg::Node>>& nodes)
+{
+    auto scene = NamedGroup::create();
+    scene->annotation = "Scene";
+    double xExtent = 0.0;
+    auto nameItr = names.begin();
+    auto nodeItr = nodes.begin();
+    for (; nodeItr != nodes.end(); ++nameItr, ++nodeItr)
+    {
+        vsg::ComputeBounds computeBounds;
+        (*nodeItr)->accept(computeBounds);
+        double width =  (computeBounds.bounds.max.x - computeBounds.bounds.min.x) * 1.1;
+        vsg::dmat4 mat = vsg::translate(xExtent + width / 2, 0.0, 0.0);
+        auto matNode = NamedTransform::create(mat);
+        matNode->annotation = *nameItr;
+        matNode->addChild(*nodeItr);
+        scene->addChild(matNode);
+        xExtent += width;
+    }
+    return scene;
 }
+
 
 void enableGenerateDebugInfo(vsg::ref_ptr<vsg::Options> options)
 {
@@ -64,6 +102,8 @@ int main(int argc, char** argv)
         arguments.read(options);
 
         auto windowTraits = vsg::WindowTraits::create();
+        // Use the VK_EXT_debug_utils extension, the point of this demo
+        windowTraits->debugUtils = true;
         windowTraits->windowTitle = "vsgviewer";
         windowTraits->debugLayer = arguments.read({"--debug", "-d"});
         windowTraits->apiDumpLayer = arguments.read({"--api", "-a"});
@@ -94,11 +134,7 @@ int main(int argc, char** argv)
         if (arguments.read({"--window", "-w"}, windowTraits->width, windowTraits->height)) { windowTraits->fullscreen = false; }
         if (arguments.read({"--no-frame", "--nf"})) windowTraits->decoration = false;
         if (arguments.read("--or")) windowTraits->overrideRedirect = true;
-
         if (arguments.read("--d32")) windowTraits->depthFormat = VK_FORMAT_D32_SFLOAT;
-        if (arguments.read("--sRGB")) windowTraits->swapchainPreferences.surfaceFormat = {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-        if (arguments.read("--RGB")) windowTraits->swapchainPreferences.surfaceFormat = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-
         arguments.read("--screen", windowTraits->screenNum);
         arguments.read("--display", windowTraits->display);
         arguments.read("--samples", windowTraits->samples);
@@ -118,22 +154,11 @@ int main(int argc, char** argv)
 
         if (int log_level = 0; arguments.read("--log-level", log_level)) vsg::Logger::instance()->level = vsg::Logger::Level(log_level);
 
-        vsg::ref_ptr<vsg::Instrumentation> instrumentation;
-        if (arguments.read({"--gpu-annotation", "--ga"}) && vsg::isExtensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+        // For a sanity check that everything still works if we don't enable the extension.
+        if (arguments.read("--no-annotate"))
         {
-            windowTraits->debugUtils = true;
-
-            auto gpu_instrumentation = vsg::GpuAnnotation::create();
-            if (arguments.read("--name")) gpu_instrumentation->labelType = vsg::GpuAnnotation::SourceLocation_name;
-            else if (arguments.read("--className")) gpu_instrumentation->labelType = vsg::GpuAnnotation::Object_className;
-            else if (arguments.read("--func")) gpu_instrumentation->labelType = vsg::GpuAnnotation::SourceLocation_function;
-
-            instrumentation = gpu_instrumentation;
+            windowTraits->debugUtils = false;
         }
-
-        // should animations be automatically played
-        auto autoPlay = !arguments.read({"--no-auto-play", "--nop"});
-
         if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
 
         if (argc <= 1)
@@ -142,27 +167,19 @@ int main(int argc, char** argv)
             return 1;
         }
 
-        auto group = vsg::Group::create();
-
-        vsg::Path path;
-
+        std::vector<std::string> fileNames;
+        std::vector<vsg::ref_ptr<vsg::Node>> nodes;
         // read any vsg files
         for (int i = 1; i < argc; ++i)
         {
             vsg::Path filename = arguments[i];
-            path = vsg::filePath(filename);
+            vsg::Path path = vsg::findFile(filename, options);
 
             auto object = vsg::read(filename, options);
             if (auto node = object.cast<vsg::Node>())
             {
-                group->addChild(node);
-            }
-            else if (auto data = object.cast<vsg::Data>())
-            {
-                if (auto textureGeometry = createTextureQuad(data, options))
-                {
-                    group->addChild(textureGeometry);
-                }
+                fileNames.push_back(path.string());
+                nodes.push_back(node);
             }
             else if (object)
             {
@@ -174,16 +191,12 @@ int main(int argc, char** argv)
             }
         }
 
-        if (group->children.empty())
+        if (nodes.empty())
         {
             return 1;
         }
 
-        vsg::ref_ptr<vsg::Node> vsg_scene;
-        if (group->children.size() == 1)
-            vsg_scene = group->children[0];
-        else
-            vsg_scene = group;
+        vsg::ref_ptr<vsg::Node> vsg_scene = createAnnotatedScene(fileNames, nodes);
 
         // create the viewer and assign window(s) to it
         auto viewer = vsg::Viewer::create();
@@ -243,8 +256,6 @@ int main(int argc, char** argv)
         auto commandGraph = vsg::createCommandGraphForView(window, camera, vsg_scene);
         viewer->assignRecordAndSubmitTaskAndPresentation({commandGraph});
 
-        if (instrumentation) viewer->assignInstrumentation(instrumentation);
-
         viewer->compile();
 
         if (maxPagedLOD > 0)
@@ -253,16 +264,6 @@ int main(int argc, char** argv)
             for(auto& task : viewer->recordAndSubmitTasks)
             {
                 if (task->databasePager) task->databasePager->targetMaxNumPagedLODWithHighResSubgraphs = maxPagedLOD;
-            }
-        }
-
-        if (autoPlay)
-        {
-            // find any animation groups in the loaded scene graph and play the first animation in each of the animation groups.
-            auto animationGroups = vsg::visit<vsg::FindAnimations>(vsg_scene).animationGroups;
-            for(auto ag : animationGroups)
-            {
-                if (!ag->animations.empty()) viewer->animationManager->play(ag->animations.front());
             }
         }
 

@@ -4,10 +4,25 @@
 #    include <vsgXchange/all.h>
 #endif
 
+#ifdef Tracy_FOUND
+#    include <vsg/utils/TracyInstrumentation.h>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <thread>
+
+vsg::ref_ptr<vsg::Node> decorateWithInstrumentationNode(vsg::ref_ptr<vsg::Node> node, const std::string& name, vsg::uint_color color)
+{
+    auto instrumentationNode = vsg::InstrumentationNode::create(node);
+    instrumentationNode->setName(name);
+    instrumentationNode->setColor(color);
+
+    vsg::info("decorateWithInstrumentationNode(", node, ", ", name, ", {", int(color.r), ", ", int(color.g), ", ", int(color.b), ", ", int(color.a), "})");
+
+    return instrumentationNode;
+}
 
 struct Merge : public vsg::Inherit<vsg::Operation, Merge>
 {
@@ -23,6 +38,7 @@ struct Merge : public vsg::Inherit<vsg::Operation, Merge>
     vsg::ref_ptr<vsg::Group> attachmentPoint;
     vsg::ref_ptr<vsg::Node> node;
     vsg::CompileResult compileResult;
+    bool autoPlay = true;
 
     void run() override
     {
@@ -32,6 +48,17 @@ struct Merge : public vsg::Inherit<vsg::Operation, Merge>
         if (ref_viewer)
         {
             updateViewer(*ref_viewer, compileResult);
+
+            if (autoPlay)
+            {
+                // find any animation groups in the loaded scene graph and play the first animation in each of the animation groups.
+                auto animationGroups = vsg::visit<vsg::FindAnimations>(node).animationGroups;
+                for(auto ag : animationGroups)
+                {
+                    if (!ag->animations.empty()) ref_viewer->animationManager->play(ag->animations.front());
+                }
+            }
+
         }
 
         attachmentPoint->addChild(node);
@@ -53,7 +80,7 @@ struct LoadOperation : public vsg::Inherit<vsg::Operation, LoadOperation>
 
     void run() override
     {
-        vsg::ref_ptr<vsg::Viewer > ref_viewer = viewer;
+        vsg::ref_ptr<vsg::Viewer> ref_viewer = viewer;
 
         // std::cout << "Loading " << filename << std::endl;
         if (auto node = vsg::read_cast<vsg::Node>(filename, options))
@@ -66,11 +93,16 @@ struct LoadOperation : public vsg::Inherit<vsg::Operation, LoadOperation>
             vsg::dvec3 centre = (computeBounds.bounds.min + computeBounds.bounds.max) * 0.5;
             double radius = vsg::length(computeBounds.bounds.max - computeBounds.bounds.min) * 0.5;
             auto scale = vsg::MatrixTransform::create(vsg::scale(1.0 / radius, 1.0 / radius, 1.0 / radius) * vsg::translate(-centre));
-
             scale->addChild(node);
+            node = scale;
+
+            if (vsg::value<bool>(false, "decorate", options))
+            {
+                node = decorateWithInstrumentationNode(node, filename.string(), vsg::uint_color(255, 255, 64, 255));
+            }
 
             auto result = ref_viewer->compileManager->compile(node);
-            if (result) ref_viewer->addUpdateOperation(Merge::create(filename, viewer, attachmentPoint, scale, result));
+            if (result) ref_viewer->addUpdateOperation(Merge::create(filename, viewer, attachmentPoint, node, result));
         }
     }
 };
@@ -110,7 +142,33 @@ int main(int argc, char** argv)
         vsg::ref_ptr<vsg::ResourceHints> resourceHints;
         if (vsg::Path resourceFile; arguments.read("--resource", resourceFile)) resourceHints = vsg::read_cast<vsg::ResourceHints>(resourceFile);
 
-        if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
+        // Use --decorate command line option to set "decorate" user Options value.
+        // this will be checked by the MergeOperation to decide wither to decorate the loaded subgraph with a InstrumentationNode
+        options->setValue("decorate", arguments.read("--decorate"));
+
+        vsg::ref_ptr<vsg::Instrumentation> instrumentation;
+        if (arguments.read({"--gpu-annotation", "--ga"}) && vsg::isExtensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+        {
+            windowTraits->debugUtils = true;
+
+            auto gpu_instrumentation = vsg::GpuAnnotation::create();
+            if (arguments.read("--func")) gpu_instrumentation->labelType = vsg::GpuAnnotation::SourceLocation_function;
+
+            instrumentation = gpu_instrumentation;
+        }
+#ifdef Tracy_FOUND
+        else if (arguments.read("--tracy"))
+        {
+            windowTraits->deviceExtensionNames.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+
+            auto tracy_instrumentation = vsg::TracyInstrumentation::create();
+            arguments.read("--cpu", tracy_instrumentation->settings->cpu_instumentation_level);
+            arguments.read("--gpu", tracy_instrumentation->settings->gpu_instumentation_level);
+            instrumentation = tracy_instrumentation;
+        }
+#endif
+
+    if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
 
         if (argc <= 1)
         {
@@ -161,6 +219,8 @@ int main(int argc, char** argv)
 
         auto commandGraph = vsg::createCommandGraphForView(window, camera, vsg_scene);
         viewer->assignRecordAndSubmitTaskAndPresentation({commandGraph});
+
+        if (instrumentation) viewer->assignInstrumentation(instrumentation);
 
         if (!resourceHints)
         {

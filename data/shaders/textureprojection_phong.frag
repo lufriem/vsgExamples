@@ -2,8 +2,11 @@
 #extension GL_ARB_separate_shader_objects : enable
 #pragma import_defines (VSG_POINT_SPRITE, VSG_DIFFUSE_MAP, VSG_GREYSCALE_DIFFUSE_MAP, VSG_EMISSIVE_MAP, VSG_LIGHTMAP_MAP, VSG_NORMAL_MAP, VSG_SPECULAR_MAP, VSG_TWO_SIDED_LIGHTING, SHADOWMAP_DEBUG)
 
-#define VIEW_DESCRIPTOR_SET 0
-#define MATERIAL_DESCRIPTOR_SET 1
+#define VIEW_DESCRIPTOR_SET 1
+#define MATERIAL_DESCRIPTOR_SET 2
+#define CUSTOM_DESCRIPTOR_SET 0
+
+#extension GL_EXT_nonuniform_qualifier : enable
 
 #ifdef VSG_DIFFUSE_MAP
 layout(set = MATERIAL_DESCRIPTOR_SET, binding = 0) uniform sampler2D diffuseMap;
@@ -43,6 +46,20 @@ layout(set = VIEW_DESCRIPTOR_SET, binding = 0) uniform LightData
 
 
 layout(set = VIEW_DESCRIPTOR_SET, binding = 2) uniform sampler2DArrayShadow shadowMaps;
+
+// Custom state
+layout(set = CUSTOM_DESCRIPTOR_SET, binding = 0) uniform TextureCount
+{
+    uint value;
+} textureCount;
+
+layout(set = CUSTOM_DESCRIPTOR_SET, binding = 1) uniform TexGenMatrices
+{
+    mat4 matrix[128];
+} texgenMatrices;
+
+layout(set = CUSTOM_DESCRIPTOR_SET, binding = 2) uniform sampler2DArray projectedTextures;
+
 
 layout(location = 0) in vec3 eyePos;
 layout(location = 1) in vec3 normalDir;
@@ -116,13 +133,35 @@ void main()
 #endif
 
     vec4 diffuseColor = vertexColor * material.diffuseColor;
+
+    bool matchedProjectedTexture = false;
+
+    for(int ti = 0; ti < textureCount.value; ++ti)
+    {
+        vec4 tc = texgenMatrices.matrix[ti] * vec4(eyePos, 1.0);
+        if (tc.w > 0.0)
+        {
+            tc.xy = (tc.xy * (0.5 / tc.w)) + vec2(0.5, 0.5);
+            if (tc.x >= 0.0 && tc.x <= 1.0 && tc.y >= 0.0 && tc.y <= 1.0)
+            {
+                matchedProjectedTexture = true;
+
+                diffuseColor *= texture(projectedTextures, vec3(tc.xy, ti));
+                break;
+            }
+        }
+    }
+
 #ifdef VSG_DIFFUSE_MAP
+    if (!matchedProjectedTexture)
+    {
     #ifdef VSG_GREYSCALE_DIFFUSE_MAP
         float v = texture(diffuseMap, texCoord0.st).s;
         diffuseColor *= vec4(v, v, v, 1.0);
     #else
         diffuseColor *= texture(diffuseMap, texCoord0.st);
     #endif
+    }
 #endif
 
     vec4 ambientColor = diffuseColor * material.ambientColor * material.ambientColor.a;
@@ -304,7 +343,6 @@ void main()
             }
         }
     }
-
 
     outColor.rgb = (color * ambientOcclusion) + emissiveColor.rgb;
     outColor.a = diffuseColor.a;

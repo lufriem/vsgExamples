@@ -4,39 +4,79 @@
 #    include <vsgXchange/all.h>
 #endif
 
+#ifdef Tracy_FOUND
+#    include <vsg/utils/TracyInstrumentation.h>
+#endif
+
 #include <iostream>
 
-vsg::ref_ptr<vsg::Node> createTestScene(vsg::ref_ptr<vsg::Options> options, vsg::Path textureFile = {}, bool requiresBase = true, bool insertCullNode = true)
+struct ModelSettings
+{
+    vsg::ref_ptr<vsg::Options> options;
+    vsg::Path textureFile;
+    double lodScreenRatio = 0.02;
+    bool insertBaseGeometry = true;
+    bool insertCullNode = false;
+    bool insertLODNode = false;
+};
+
+vsg::ref_ptr<vsg::Node> decorateIfRequired(vsg::ref_ptr<vsg::Node> node, const ModelSettings& settings)
+{
+    if (settings.insertLODNode)
+    {
+        if (auto cullNode = node.cast<vsg::CullNode>())
+        {
+            // replace cullNode with LOD
+            auto lod = vsg::LOD::create();
+            lod->bound = cullNode->bound;
+            lod->addChild(vsg::LOD::Child{settings.lodScreenRatio, cullNode->child});
+            return lod;
+        }
+        else
+        {
+            auto bb = vsg::visit<vsg::ComputeBounds>(node).bounds;
+            auto lod = vsg::LOD::create();
+            lod->bound = vsg::sphere((bb.min + bb.max) * 0.5, vsg::length(bb.max - bb.min));
+            lod->addChild(vsg::LOD::Child{settings.lodScreenRatio, node});
+            return lod;
+        }
+    }
+
+    return node;
+};
+
+
+vsg::ref_ptr<vsg::Node> createTestScene(const ModelSettings& settings)
 {
     auto builder = vsg::Builder::create();
-    builder->options = options;
+    builder->options = settings.options;
 
     auto scene = vsg::Group::create();
 
     vsg::GeometryInfo geomInfo;
-    vsg::StateInfo stateInfo;
+    geomInfo.cullNode = settings.insertCullNode;
 
-    geomInfo.cullNode = insertCullNode;
-    if (textureFile) stateInfo.image = vsg::read_cast<vsg::Data>(textureFile, options);
+    vsg::StateInfo stateInfo;
+    if (settings.textureFile) stateInfo.image = vsg::read_cast<vsg::Data>(settings.textureFile, settings.options);
 
     geomInfo.color.set(1.0f, 1.0f, 0.5f, 1.0f);
-    scene->addChild(builder->createBox(geomInfo, stateInfo));
+    scene->addChild(decorateIfRequired(builder->createBox(geomInfo, stateInfo), settings));
 
     geomInfo.color.set(1.0f, 0.5f, 1.0f, 1.0f);
     geomInfo.position += geomInfo.dx * 1.5f;
-    scene->addChild(builder->createSphere(geomInfo, stateInfo));
+    scene->addChild(decorateIfRequired(builder->createSphere(geomInfo, stateInfo), settings));
 
     geomInfo.color.set(0.0f, 1.0f, 1.0f, 1.0f);
     geomInfo.position += geomInfo.dx * 1.5f;
-    scene->addChild(builder->createCylinder(geomInfo, stateInfo));
+    scene->addChild(decorateIfRequired(builder->createCylinder(geomInfo, stateInfo), settings));
 
     geomInfo.color.set(0.5f, 1.0f, 0.5f, 1.0f);
     geomInfo.position += geomInfo.dx * 1.5f;
-    scene->addChild(builder->createCapsule(geomInfo, stateInfo));
+    scene->addChild(decorateIfRequired(builder->createCapsule(geomInfo, stateInfo), settings));
 
 
     auto bounds = vsg::visit<vsg::ComputeBounds>(scene).bounds;
-    if (requiresBase)
+    if (settings.insertBaseGeometry)
     {
         double diameter = vsg::length(bounds.max - bounds.min);
         geomInfo.position.set((bounds.min.x + bounds.max.x)*0.5, (bounds.min.y + bounds.max.y)*0.5, bounds.min.z);
@@ -53,19 +93,19 @@ vsg::ref_ptr<vsg::Node> createTestScene(vsg::ref_ptr<vsg::Options> options, vsg:
     return scene;
 }
 
-vsg::ref_ptr<vsg::Node> createLargeTestScene(vsg::ref_ptr<vsg::Options> options, vsg::Path textureFile = {}, bool requiresBase = true, bool insertCullNode = true)
+vsg::ref_ptr<vsg::Node> createLargeTestScene(const ModelSettings& settings)
 {
     auto builder = vsg::Builder::create();
-    builder->options = options;
+    builder->options = settings.options;
 
     auto scene = vsg::Group::create();
 
     vsg::GeometryInfo geomInfo;
+    geomInfo.cullNode = settings.insertCullNode;
+
     vsg::StateInfo stateInfo;
+    if (settings.textureFile) stateInfo.image = vsg::read_cast<vsg::Data>(settings.textureFile, settings.options);
 
-    geomInfo.cullNode = insertCullNode;
-
-    if (textureFile) stateInfo.image = vsg::read_cast<vsg::Data>(textureFile, options);
     vsg::box bounds(vsg::vec3(0.0f, 0.0f, 0.0f), vsg::vec3(1000.0f, 1000.0f, 20.0f));
 
     uint32_t numBoxes = 400;
@@ -92,28 +132,28 @@ vsg::ref_ptr<vsg::Node> createLargeTestScene(vsg::ref_ptr<vsg::Options> options,
     for(uint32_t bi = 0; bi < numBoxes; ++bi)
     {
         assignRandomGeometryInfo();
-        auto model = builder->createBox(geomInfo, stateInfo);
-        vsg::info("BOX geomInfo.position = ", geomInfo.position, ", ", model);
+        auto model = decorateIfRequired(builder->createBox(geomInfo, stateInfo), settings);
+        // vsg::info("BOX geomInfo.position = ", geomInfo.position, ", ", model);
         scene->addChild(model);
     }
 
     for(uint32_t bi = 0; bi < numSpheres; ++bi)
     {
         assignRandomGeometryInfo();
-        auto model = builder->createSphere(geomInfo, stateInfo);
-        vsg::info("Sphere geomInfo.position = ", geomInfo.position, ", ", model);
+        auto model = decorateIfRequired(builder->createSphere(geomInfo, stateInfo), settings);
+        // vsg::info("Sphere geomInfo.position = ", geomInfo.position, ", ", model);
         scene->addChild(model);
     }
 
     for(uint32_t bi = 0; bi < numCapsules; ++bi)
     {
         assignRandomGeometryInfo();
-        auto model = builder->createCapsule(geomInfo, stateInfo);
-        vsg::info("Capsule geomInfo.position = ", geomInfo.position, ", ", model);
+        auto model = decorateIfRequired(builder->createCapsule(geomInfo, stateInfo), settings);
+        // vsg::info("Capsule geomInfo.position = ", geomInfo.position, ", ", model);
         scene->addChild(model);
     }
 
-    if (requiresBase)
+    if (settings.insertBaseGeometry)
     {
         double diameter = vsg::length(bounds.max - bounds.min);
         geomInfo.position.set((bounds.min.x + bounds.max.x)*0.5, (bounds.min.y + bounds.max.y)*0.5, bounds.min.z);
@@ -152,6 +192,7 @@ int main(int argc, char** argv)
     vsg::CommandLine arguments(&argc, argv);
     windowTraits->debugLayer = arguments.read({"--debug", "-d"});
     windowTraits->apiDumpLayer = arguments.read({"--api", "-a"});
+    windowTraits->synchronizationLayer = arguments.read("--sync");
 
     arguments.read("--screen", windowTraits->screenNum);
     arguments.read("--display", windowTraits->display);
@@ -159,6 +200,8 @@ int main(int argc, char** argv)
     if (arguments.read({"--fullscreen", "--fs"})) windowTraits->fullscreen = true;
     if (arguments.read({"--window", "-w"}, windowTraits->width, windowTraits->height)) { windowTraits->fullscreen = false; }
     if (arguments.read("--IMMEDIATE")) windowTraits->swapchainPreferences.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+    if (arguments.read("--d32")) windowTraits->depthFormat = VK_FORMAT_D32_SFLOAT;
+    arguments.read("--samples", windowTraits->samples);
     if (arguments.read({"-t", "--test"}))
     {
         windowTraits->swapchainPreferences.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
@@ -170,6 +213,28 @@ int main(int argc, char** argv)
         windowTraits->width = 192, windowTraits->height = 108;
         windowTraits->decoration = false;
     }
+
+    vsg::ref_ptr<vsg::Instrumentation> instrumentation;
+    if (arguments.read({"--gpu-annotation", "--ga"}) && vsg::isExtensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+    {
+        windowTraits->debugUtils = true;
+
+        auto gpu_instrumentation = vsg::GpuAnnotation::create();
+        if (arguments.read("--func")) gpu_instrumentation->labelType = vsg::GpuAnnotation::SourceLocation_function;
+
+        instrumentation = gpu_instrumentation;
+    }
+#ifdef Tracy_FOUND
+    else if (arguments.read("--tracy"))
+    {
+        windowTraits->deviceExtensionNames.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+
+        auto tracy_instrumentation = vsg::TracyInstrumentation::create();
+        arguments.read("--cpu", tracy_instrumentation->settings->cpu_instumentation_level);
+        arguments.read("--gpu", tracy_instrumentation->settings->gpu_instumentation_level);
+        instrumentation = tracy_instrumentation;
+    }
+#endif
 
     double maxShadowDistance = arguments.value<double>(1e8, "--sd");
     double shadowMapBias = arguments.value<double>(0.005, "--sb");
@@ -186,7 +251,11 @@ int main(int argc, char** argv)
         deviceFeatures->get().depthClamp = VK_TRUE;
     }
 
-    vsg::Path textureFile = arguments.value(vsg::Path{}, {"-i", "--image"});
+    ModelSettings settings;
+    settings.options = options;
+    settings.textureFile = arguments.value(vsg::Path{}, {"-i", "--image"});
+    settings.insertCullNode = arguments.read("--cull");
+    settings.insertLODNode = arguments.read("--lod");
 
     auto numShadowMapsPerLight = arguments.value<uint32_t>(1, "--sm");
     auto numLights = arguments.value<uint32_t>(1, "-n");
@@ -280,7 +349,6 @@ int main(int argc, char** argv)
     auto pathFilename = arguments.value<vsg::Path>("", "-p");
     auto outputFilename = arguments.value<vsg::Path>("", "-o");
 
-    bool requiresBase = true;
     vsg::ref_ptr<vsg::Node> earthModel;
     vsg::ref_ptr<vsg::EllipsoidModel> ellipsoidModel;
     if (auto earthFilename = arguments.value<vsg::Path>("", "--earth"))
@@ -289,20 +357,36 @@ int main(int argc, char** argv)
         if (earthModel)
         {
             ellipsoidModel = earthModel->getRefObject<vsg::EllipsoidModel>("EllipsoidModel");
-            requiresBase = false;
+            settings.insertBaseGeometry = false;
         }
     }
 
+
+    auto inherit = arguments.read("--inherit");
     auto direction = arguments.value(vsg::dvec3(0.0, 0.0, -1.0), "--direction");
-    auto insertCullNode = arguments.read("--cull");
     auto location = arguments.value<vsg::dvec3>({0.0, 0.0, 0.0}, "--location");
     auto scale = arguments.value<double>(1.0, "--scale");
     double viewingDistance = scale;
 
+    vsg::ref_ptr<vsg::StateGroup> stateGroup;
+    if (inherit)
+    {
+        auto shaderSet = vsg::createPhongShaderSet(options);
+        auto layout = shaderSet->createPipelineLayout({}, {0, 1});
+
+        stateGroup = vsg::StateGroup::create();
+
+        uint32_t vds_set = 0;
+        stateGroup->add(vsg::BindViewDescriptorSets::create(VK_PIPELINE_BIND_POINT_GRAPHICS, layout, vds_set));
+
+        vsg::info("Added state to inherit ");
+        options->inheritedState = stateGroup->stateCommands;
+    }
+
     vsg::ref_ptr<vsg::Node> scene;
     if (arguments.read("--large"))
     {
-        scene = createLargeTestScene(options, textureFile, requiresBase, insertCullNode);
+        scene = createLargeTestScene(settings);
     }
     else if (argc>1)
     {
@@ -318,7 +402,14 @@ int main(int argc, char** argv)
     }
     else
     {
-        scene = createTestScene(options, textureFile, requiresBase, insertCullNode);
+        scene = createTestScene(settings);
+    }
+
+    if (stateGroup)
+    {
+        // if setup place the StateGroup at the root of the scene graph
+        stateGroup->addChild(scene);
+        scene = stateGroup;
     }
 
     // compute the bounds of the scene graph to help position camera
@@ -340,7 +431,6 @@ int main(int argc, char** argv)
         group->addChild(earthModel);
 
         scene = group;
-
         viewingDistance *= scale;
 
         // set up the camera
@@ -457,6 +547,8 @@ int main(int argc, char** argv)
     auto renderGraph = vsg::RenderGraph::create(window, view);
     auto commandGraph = vsg::CommandGraph::create(window, renderGraph);
     viewer->assignRecordAndSubmitTaskAndPresentation({commandGraph});
+
+    if (instrumentation) viewer->assignInstrumentation(instrumentation);
 
     viewer->compile(resourceHints);
 

@@ -26,12 +26,14 @@ int main(int argc, char** argv)
     windowTraits->windowTitle = "vsgtiledatabase";
     windowTraits->debugLayer = arguments.read({"--debug", "-d"});
     windowTraits->apiDumpLayer = arguments.read({"--api", "-a"});
+    windowTraits->synchronizationLayer = arguments.read("--sync");
     if (arguments.read("--IMMEDIATE")) windowTraits->swapchainPreferences.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
     if (arguments.read({"--fullscreen", "--fs"})) windowTraits->fullscreen = true;
     if (arguments.read({"--window", "-w"}, windowTraits->width, windowTraits->height)) { windowTraits->fullscreen = false; }
     arguments.read("--screen", windowTraits->screenNum);
     arguments.read("--display", windowTraits->display);
     arguments.read("--samples", windowTraits->samples);
+    if (int log_level = 0; arguments.read("--log-level", log_level)) vsg::Logger::instance()->level = vsg::Logger::Level(log_level);
     auto outputFilename = arguments.value<vsg::Path>("", "-o");
     auto numFrames = arguments.value(-1, "-f");
     auto pathFilename = arguments.value<vsg::Path>("", "-p");
@@ -43,8 +45,7 @@ int main(int argc, char** argv)
     arguments.read("--file-cache", options->fileCache);
     bool osgEarthStyleMouseButtons = arguments.read({"--osgearth", "-e"});
 
-    VkClearColorValue clearColor{{0.2f, 0.2f, 0.4f, 1.0f}};
-    arguments.read({"--bc", "--background-color"}, clearColor.float32[0], clearColor.float32[1], clearColor.float32[2], clearColor.float32[3]);
+    auto clearColor = arguments.value(vsg::vec4(0.2f, 0.2f, 0.4f, 1.0f), "--clear");
 
     uint32_t numOperationThreads = 0;
     if (arguments.read("--ot", numOperationThreads)) options->operationThreads = vsg::OperationThreads::create(numOperationThreads);
@@ -80,7 +81,19 @@ int main(int argc, char** argv)
         settings->maxLevel = 10;
         settings->originTopLeft = false;
         settings->imageLayer = "http://readymap.org/readymap/tiles/1.0.0/7/{z}/{x}/{y}.jpeg";
-        // settings->terrainLayer = "http://readymap.org/readymap/tiles/1.0.0/116/{z}/{x}/{y}.tif";
+    }
+    if (arguments.read("--rme"))
+    {
+        // setup ready map settings
+        settings = vsg::TileDatabaseSettings::create();
+        settings->extents = {{-180.0, -90.0, 0.0}, {180.0, 90.0, 1.0}};
+        settings->noX = 2;
+        settings->noY = 1;
+        settings->maxLevel = 10;
+        settings->originTopLeft = false;
+        settings->imageLayer = "http://readymap.org/readymap/tiles/1.0.0/22/{z}/{x}/{y}.jpeg";
+        settings->elevationLayer = "http://readymap.org/readymap/tiles/1.0.0/116/{z}/{x}/{y}.tif";
+        settings->elevationScale = 32868.0; // .tif elevation data is signed short
     }
 
     if (arguments.read("--osm") || !settings)
@@ -93,19 +106,42 @@ int main(int argc, char** argv)
         settings->maxLevel = 17;
         settings->originTopLeft = true;
         settings->lighting = false;
-        settings->projection = "EPSG:3857";  // Spherical Mecator
+        settings->projection = "EPSG:3857"; // Spherical Mecator
         settings->imageLayer = "http://a.tile.openstreetmap.org/{z}/{x}/{y}.png";
     }
 
-
     if (!settings)
     {
-        std::cout<<"No TileDatabaseSettings assigned."<<std::endl;
+        std::cout << "No TileDatabaseSettings assigned." << std::endl;
         return 1;
+    }
+
+    if (arguments.read("--detail", settings->detailLayer))
+    {
+
+        auto detailCallback = [](vsg::ref_ptr<vsg::Data> data) -> vsg::ref_ptr<vsg::Data> {
+            struct SetAlpha : public vsg::Visitor
+            {
+                void apply(vsg::ubvec4Array2D& data) override
+                {
+                    for (auto& texel : data)
+                    {
+                        if (texel == vsg::ubvec4(242, 239, 233, 255)) texel.a = 0;
+                    }
+                }
+            } setAlpha;
+
+            if (data) data->accept(setAlpha);
+
+            return data;
+        };
+
+        settings->detailLayerCallback = detailCallback;
     }
 
     arguments.read("-t", settings->lodTransitionScreenHeightRatio);
     arguments.read("-m", settings->maxLevel);
+    arguments.read({"--mtd", "--maxTileDimension"}, settings->maxTileDimension);
 
     auto ellipsoidModel = settings->ellipsoidModel;
 
@@ -179,50 +215,40 @@ int main(int argc, char** argv)
         perspective = vsg::Perspective::create(30.0, static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height), nearFarRatio * radius, radius * 4.5);
     }
 
-
     auto camera = vsg::Camera::create(perspective, lookAt, vsg::ViewportState::create(window->extent2D()));
 
     // add close handler to respond to the close window button and pressing escape
     viewer->addEventHandler(vsg::CloseHandler::create(viewer));
 
-    if (pathFilename)
+    auto cameraAnimation = vsg::CameraAnimationHandler::create(camera, pathFilename, options);
+    viewer->addEventHandler(cameraAnimation);
+    if (cameraAnimation->animation) cameraAnimation->play();
+
+    if (ellipsoidModel)
     {
-        if (ellipsoidModel)
-        {
-            auto trackball = vsg::Trackball::create(camera, ellipsoidModel);
-            trackball->addKeyViewpoint(vsg::KeySymbol('1'), 51.50151088842245, -0.14181489107549874, 2000.0, 2.0); // Greenwich Observatory
-            trackball->addKeyViewpoint(vsg::KeySymbol('2'), 55.948642740309324, -3.199226855522667, 2000.0, 2.0);  // Edinburgh Castle
-            trackball->addKeyViewpoint(vsg::KeySymbol('3'), 48.858264952330764, 2.2945039609604665, 2000.0, 2.0);  // Eiffel Town, Paris
-            trackball->addKeyViewpoint(vsg::KeySymbol('4'), 52.5162603714634, 13.377684902745642, 2000.0, 2.0);    // Brandenburg Gate, Berlin
-            trackball->addKeyViewpoint(vsg::KeySymbol('5'), 30.047448591298807, 31.236319571791213, 10000.0, 2.0); // Cairo
-            trackball->addKeyViewpoint(vsg::KeySymbol('6'), 35.653099536061156, 139.74704060056993, 10000.0, 2.0); // Tokyo
-            trackball->addKeyViewpoint(vsg::KeySymbol('7'), 37.38701052699002, -122.08555895549424, 10000.0, 2.0); // Mountain View, California
-            trackball->addKeyViewpoint(vsg::KeySymbol('8'), 40.689618207006355, -74.04465595488215, 10000.0, 2.0); // Empire State Building
-            trackball->addKeyViewpoint(vsg::KeySymbol('9'), 25.997055873649554, -97.15543476551771, 1000.0, 2.0);  // Boca Chica, Taxas
+        auto trackball = vsg::Trackball::create(camera, ellipsoidModel);
+        trackball->addKeyViewpoint(vsg::KeySymbol('1'), 51.50151088842245, -0.14181489107549874, 2000.0, 2.0); // Greenwich Observatory
+        trackball->addKeyViewpoint(vsg::KeySymbol('2'), 55.948642740309324, -3.199226855522667, 2000.0, 2.0);  // Edinburgh Castle
+        trackball->addKeyViewpoint(vsg::KeySymbol('3'), 48.858264952330764, 2.2945039609604665, 2000.0, 2.0);  // Eiffel Town, Paris
+        trackball->addKeyViewpoint(vsg::KeySymbol('4'), 52.5162603714634, 13.377684902745642, 2000.0, 2.0);    // Brandenburg Gate, Berlin
+        trackball->addKeyViewpoint(vsg::KeySymbol('5'), 30.047448591298807, 31.236319571791213, 10000.0, 2.0); // Cairo
+        trackball->addKeyViewpoint(vsg::KeySymbol('6'), 35.653099536061156, 139.74704060056993, 10000.0, 2.0); // Tokyo
+        trackball->addKeyViewpoint(vsg::KeySymbol('7'), 37.38701052699002, -122.08555895549424, 10000.0, 2.0); // Mountain View, California
+        trackball->addKeyViewpoint(vsg::KeySymbol('8'), 40.689618207006355, -74.04465595488215, 10000.0, 2.0); // Empire State Building
+        trackball->addKeyViewpoint(vsg::KeySymbol('9'), 25.997055873649554, -97.15543476551771, 1000.0, 2.0);  // Boca Chica, Taxas
 
-            if (osgEarthStyleMouseButtons)
-            {
-                trackball->panButtonMask = vsg::BUTTON_MASK_1;
-                trackball->rotateButtonMask = vsg::BUTTON_MASK_2;
-                trackball->zoomButtonMask = vsg::BUTTON_MASK_3;
-            }
-
-            viewer->addEventHandler(trackball);
-        }
-        else
+        if (osgEarthStyleMouseButtons)
         {
-            viewer->addEventHandler(vsg::Trackball::create(camera));
+            trackball->panButtonMask = vsg::BUTTON_MASK_1;
+            trackball->rotateButtonMask = vsg::BUTTON_MASK_2;
+            trackball->zoomButtonMask = vsg::BUTTON_MASK_3;
         }
+
+        viewer->addEventHandler(trackball);
     }
     else
     {
-        auto animationPath = vsg::read_cast<vsg::AnimationPath>(pathFilename, options);
-        if (!animationPath)
-        {
-            std::cout<<"Warning: unable to read animation path : "<<pathFilename<<std::endl;
-            return 1;
-        }
-        viewer->addEventHandler(vsg::AnimationPathHandler::create(camera, animationPath, viewer->start_point()));
+        viewer->addEventHandler(vsg::Trackball::create(camera));
     }
 
     // if required pre load specific number of PagedLOD levels.
@@ -239,7 +265,7 @@ int main(int argc, char** argv)
     }
 
     auto rendergraph = vsg::createRenderGraphForView(window, camera, vsg_scene);
-    rendergraph->setClearValues(clearColor);
+    rendergraph->setClearValues(vsg::sRGB_to_linear(clearColor));
 
     auto commandGraph = vsg::CommandGraph::create(window, rendergraph);
     viewer->assignRecordAndSubmitTaskAndPresentation({commandGraph});
@@ -249,7 +275,7 @@ int main(int argc, char** argv)
     if (maxPagedLOD > 0)
     {
         // set targetMaxNumPagedLODWithHighResSubgraphs after Viewer::compile() as it will assign any DatabasePager if required.
-        for(auto& task : viewer->recordAndSubmitTasks)
+        for (auto& task : viewer->recordAndSubmitTasks)
         {
             if (task->databasePager) task->databasePager->targetMaxNumPagedLODWithHighResSubgraphs = maxPagedLOD;
         }

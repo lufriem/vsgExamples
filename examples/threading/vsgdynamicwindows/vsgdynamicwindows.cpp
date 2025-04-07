@@ -11,7 +11,7 @@
 
 struct Merge : public vsg::Inherit<vsg::Operation, Merge>
 {
-    Merge(const vsg::observer_ptr<vsg::Viewer> in_viewer, vsg::ref_ptr<vsg::Visitor> in_eventHandler, vsg::ref_ptr<vsg::CommandGraph> in_commandGraph, const vsg::CompileResult& in_compileResult):
+    Merge(const vsg::observer_ptr<vsg::Viewer> in_viewer, vsg::ref_ptr<vsg::Visitor> in_eventHandler, vsg::ref_ptr<vsg::CommandGraph> in_commandGraph, const vsg::CompileResult& in_compileResult) :
         viewer(in_viewer),
         eventHandler(in_eventHandler),
         commandGraph(in_commandGraph),
@@ -103,18 +103,19 @@ struct LoadWindowOperation : public vsg::Inherit<vsg::Operation, LoadWindowOpera
 
             // set up the camera
             auto lookAt = vsg::LookAt::create(centre + vsg::dvec3(0.0, -radius * 3.5, 0.0),
-                                            centre, vsg::dvec3(0.0, 0.0, 1.0));
+                                              centre, vsg::dvec3(0.0, 0.0, 1.0));
 
             auto perspective = vsg::Perspective::create(30.0, static_cast<double>(width) / static_cast<double>(height),
                                                         nearFarRatio * radius, radius * 4.5);
 
             auto camera = vsg::Camera::create(perspective, lookAt, vsg::ViewportState::create(VkExtent2D{width, height}));
 
-            auto view = vsg::View::create(camera, vsg_scene);
+            auto view = vsg::View::create(camera);
             view->addChild(vsg::createHeadlight());
+            view->addChild(vsg_scene);
 
             auto renderGraph = vsg::RenderGraph::create(second_window, view);
-            renderGraph->clearValues[0].color = {{0.2f, 0.2f, 0.2f, 1.0f}};
+            renderGraph->clearValues[0].color = vsg::sRGB_to_linear(0.2f, 0.2f, 0.2f, 1.0f);
 
             auto commandGraph = vsg::CommandGraph::create(second_window);
             commandGraph->addChild(renderGraph);
@@ -125,8 +126,7 @@ struct LoadWindowOperation : public vsg::Inherit<vsg::Operation, LoadWindowOpera
             // need to add view to compileManager
             ref_viewer->compileManager->add(*second_window, view);
 
-            auto result = ref_viewer->compileManager->compile(commandGraph, [&view](vsg::Context& context)
-            {
+            auto result = ref_viewer->compileManager->compile(commandGraph, [&view](vsg::Context& context) {
                 return (context.view == view.get());
             });
 
@@ -134,7 +134,6 @@ struct LoadWindowOperation : public vsg::Inherit<vsg::Operation, LoadWindowOpera
         }
     }
 };
-
 
 int main(int argc, char** argv)
 {
@@ -160,6 +159,7 @@ int main(int argc, char** argv)
         windowTraits->windowTitle = "vsgdynamicwindows";
         windowTraits->debugLayer = arguments.read({"--debug", "-d"});
         windowTraits->apiDumpLayer = arguments.read({"--api", "-a"});
+        windowTraits->synchronizationLayer = arguments.read("--sync");
         if (arguments.read({"--fullscreen", "--fs"})) windowTraits->fullscreen = true;
         if (arguments.read({"--window", "-w"}, windowTraits->width, windowTraits->height)) { windowTraits->fullscreen = false; }
         arguments.read("--screen", windowTraits->screenNum);
@@ -174,7 +174,7 @@ int main(int argc, char** argv)
         if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
 
         // create a Group to contain all the nodes
-        auto vsg_scene = vsg::read_cast<vsg::Node>("models/teapot.vsgt", options);
+        auto vsg_scene = vsg::read_cast<vsg::Node>("models/openstreetmap.vsgt", options);
 
         vsg::ref_ptr<vsg::Window> window(vsg::Window::create(windowTraits));
         if (!window)
@@ -182,7 +182,6 @@ int main(int argc, char** argv)
             std::cout << "Could not create window." << std::endl;
             return 1;
         }
-
 
         // create the viewer and assign window(s) to it
         auto viewer = vsg::Viewer::create();
@@ -247,6 +246,7 @@ int main(int argc, char** argv)
         vsg::observer_ptr<vsg::Viewer> observer_viewer(viewer);
         loadThreads->add(LoadWindowOperation::create(postPresentOperationQueue, observer_viewer, window, 50, 50, 512, 480, "models/lz.vsgt", options));
         loadThreads->add(LoadWindowOperation::create(postPresentOperationQueue, observer_viewer, window, 500, 50, 512, 480, "models/openstreetmap.vsgt", options));
+        loadThreads->add(LoadWindowOperation::create(postPresentOperationQueue, observer_viewer, window, 500, 50, 512, 480, "models/teapot.vsgt", options));
 
         // rendering main loop
         while (viewer->advanceToNextFrame() && (numFrames < 0 || (numFrames--) > 0))
@@ -258,7 +258,7 @@ int main(int argc, char** argv)
             viewer->present();
 
             // do any viewer additions after present
-            while(auto op = postPresentOperationQueue->take()) op->run();
+            while (auto op = postPresentOperationQueue->take()) op->run();
         }
     }
     catch (const vsg::Exception& ve)

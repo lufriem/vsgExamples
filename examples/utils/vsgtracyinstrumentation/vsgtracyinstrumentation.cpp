@@ -48,28 +48,28 @@ void enableGenerateDebugInfo(vsg::ref_ptr<vsg::Options> options)
 class InstrumentationHandler : public vsg::Inherit<vsg::Visitor, InstrumentationHandler>
 {
 public:
-
     vsg::ref_ptr<vsg::TracyInstrumentation> instrumentation;
 
-    InstrumentationHandler(vsg::ref_ptr<vsg::TracyInstrumentation> in_instrumentation) : instrumentation(in_instrumentation) {}
+    InstrumentationHandler(vsg::ref_ptr<vsg::TracyInstrumentation> in_instrumentation) :
+        instrumentation(in_instrumentation) {}
 
     void apply(vsg::KeyPressEvent& keyPress) override
     {
         if (keyPress.keyModified == 'c')
         {
-            if (instrumentation->settings->cpu_instumentation_level > 0) --instrumentation->settings->cpu_instumentation_level;
+            if (instrumentation->settings->cpu_instrumentation_level > 0) --instrumentation->settings->cpu_instrumentation_level;
         }
         else if (keyPress.keyModified == 'C')
         {
-            if (instrumentation->settings->cpu_instumentation_level < 3) ++instrumentation->settings->cpu_instumentation_level;
+            if (instrumentation->settings->cpu_instrumentation_level < 3) ++instrumentation->settings->cpu_instrumentation_level;
         }
         if (keyPress.keyModified == 'g')
         {
-            if (instrumentation->settings->gpu_instumentation_level > 0) --instrumentation->settings->gpu_instumentation_level;
+            if (instrumentation->settings->gpu_instrumentation_level > 0) --instrumentation->settings->gpu_instrumentation_level;
         }
         else if (keyPress.keyModified == 'G')
         {
-            if (instrumentation->settings->gpu_instumentation_level < 3) ++instrumentation->settings->gpu_instumentation_level;
+            if (instrumentation->settings->gpu_instrumentation_level < 3) ++instrumentation->settings->gpu_instrumentation_level;
         }
     }
 };
@@ -153,9 +153,8 @@ int main(int argc, char** argv)
 
         // set TracyInstrumentation options
         auto instrumentation = vsg::TracyInstrumentation::create();
-        arguments.read("--cpu", instrumentation->settings->cpu_instumentation_level);
-        arguments.read("--gpu", instrumentation->settings->gpu_instumentation_level);
-
+        arguments.read("--cpu", instrumentation->settings->cpu_instrumentation_level);
+        arguments.read("--gpu", instrumentation->settings->gpu_instrumentation_level);
 
         if (arguments.read({"--shader-debug-info", "--sdi"}))
         {
@@ -198,7 +197,6 @@ int main(int argc, char** argv)
 
         // assign instrumentation to vsg::Options to enable read/write functions to provide instrumentation
         options->instrumentation = instrumentation;
-
 
         auto group = vsg::Group::create();
 
@@ -257,7 +255,6 @@ int main(int argc, char** argv)
         else
             vsg_scene = group;
 
-
         if (outputFilename)
         {
             vsg::write(vsg_scene, outputFilename, options);
@@ -293,8 +290,8 @@ int main(int argc, char** argv)
         // add close handler to respond to the close window button and pressing escape
         viewer->addEventHandler(vsg::CloseHandler::create(viewer));
 
-        auto animationPathHandler = vsg::RecordAnimationPathHandler::create(camera, pathFilename, options);
-        animationPathHandler->printFrameStatsToConsole = true;
+        auto animationPathHandler = vsg::CameraAnimation::create(camera, pathFilename, options);
+        if (animationPathHandler->animation) animationPathHandler->play();
         viewer->addEventHandler(animationPathHandler);
 
         viewer->addEventHandler(vsg::Trackball::create(camera, ellipsoidModel));
@@ -344,7 +341,7 @@ int main(int argc, char** argv)
         {
             auto fs = viewer->getFrameStamp();
             double fps = static_cast<double>(fs->frameCount) / std::chrono::duration<double, std::chrono::seconds::period>(vsg::clock::now() - viewer->start_point()).count();
-            std::cout<<"Average frame rate = "<<fps<<" fps"<<std::endl;
+            std::cout << "Average frame rate = " << fps << " fps" << std::endl;
         }
     }
     catch (const vsg::Exception& ve)

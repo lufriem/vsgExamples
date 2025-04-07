@@ -13,10 +13,10 @@
 class AnimationControl : public vsg::Inherit<vsg::Visitor, AnimationControl>
 {
 public:
-
-    AnimationControl(vsg::ref_ptr<vsg::AnimationManager> am, const vsg::AnimationGroups& in_animationGroups) : animationManager(am), animationGroups(in_animationGroups)
+    AnimationControl(vsg::ref_ptr<vsg::AnimationManager> am, const vsg::AnimationGroups& in_animationGroups) :
+        animationManager(am), animationGroups(in_animationGroups)
     {
-        for(auto ag : animationGroups)
+        for (auto ag : animationGroups)
         {
             animations.insert(animations.end(), ag->animations.begin(), ag->animations.end());
         }
@@ -57,7 +57,7 @@ public:
             {
                 if (animationManager->play(*itr))
                 {
-                    std::cout<<"Playing "<<(*itr)->name<<std::endl;
+                    std::cout << "Playing " << (*itr)->name << std::endl;
 
                     ++itr;
                     if (itr == animations.end()) itr = animations.begin();
@@ -78,7 +78,7 @@ public:
             // stop all running animations
             animationManager->stop();
 
-            for(auto ag : animationGroups)
+            for (auto ag : animationGroups)
             {
                 if (!ag->animations.empty())
                 {
@@ -90,7 +90,7 @@ public:
         {
             keyPress.handled = true;
 
-            for(auto animation : animations)
+            for (auto animation : animations)
             {
                 animation->speed -= 0.25;
             }
@@ -99,7 +99,7 @@ public:
         {
             keyPress.handled = true;
 
-            for(auto animation : animations)
+            for (auto animation : animations)
             {
                 animation->speed += 0.25;
             }
@@ -159,38 +159,88 @@ int main(int argc, char** argv)
 
         instrumentation = gpu_instrumentation;
     }
+    else if (arguments.read({"--profiler", "--pr"}))
+    {
+        // set Profiler options
+        auto settings = vsg::Profiler::Settings::create();
+        arguments.read("--cpu", settings->cpu_instrumentation_level);
+        arguments.read("--gpu", settings->gpu_instrumentation_level);
+        arguments.read("--log-size", settings->log_size);
+        arguments.read("--gpu-size", settings->gpu_timestamp_size);
+
+        // create the profiler
+        instrumentation = vsg::Profiler::create(settings);
+    }
 #ifdef Tracy_FOUND
     else if (arguments.read("--tracy"))
     {
         windowTraits->deviceExtensionNames.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
 
         auto tracy_instrumentation = vsg::TracyInstrumentation::create();
-        arguments.read("--cpu", tracy_instrumentation->settings->cpu_instumentation_level);
-        arguments.read("--gpu", tracy_instrumentation->settings->gpu_instumentation_level);
+        arguments.read("--cpu", tracy_instrumentation->settings->cpu_instrumentation_level);
+        arguments.read("--gpu", tracy_instrumentation->settings->gpu_instrumentation_level);
         instrumentation = tracy_instrumentation;
     }
 #endif
 
-    // when using shadows set the depthClampEnable to true;
-    bool depthClamp = true;
-    if (depthClamp)
+    unsigned int numLights = 2;
+    auto direction = arguments.value(vsg::dvec3(-0.25, 0.25, -1.0), "--direction");
+    auto lambda = arguments.value<double>(0.25, "--lambda");
+    double maxShadowDistance = arguments.value<double>(1e8, "--sd");
+    double nearFarRatio = arguments.value<double>(0.001, "--nf");
+    vsg::ref_ptr<vsg::ShadowSettings> shadowSettings;
+
+    auto numShadowMapsPerLight = arguments.value<uint32_t>(3, "--sm");
+    if (numShadowMapsPerLight > 0)
     {
-        std::cout<<"Enabled depth clamp."<<std::endl;
+        auto shaderHints = vsg::ShaderCompileSettings::create();
+
+        float penumbraRadius = 0.005f;
+        if (arguments.read("--pcss"))
+        {
+            shadowSettings = vsg::PercentageCloserSoftShadows::create(numShadowMapsPerLight);
+            shaderHints->defines.insert("VSG_SHADOWS_PCSS");
+        }
+
+        if (arguments.read("--soft", penumbraRadius))
+        {
+            shadowSettings = vsg::SoftShadows::create(numShadowMapsPerLight, penumbraRadius);
+            shaderHints->defines.insert("VSG_SHADOWS_SOFT");
+        }
+
+        if (arguments.read("--hard") || !shadowSettings)
+        {
+            shadowSettings = vsg::HardShadows::create(numShadowMapsPerLight);
+            // shaderHints->defines.insert("VSG_SHADOWS_HARD");
+        }
+
+        std::cout << "Enabled depth clamp." << std::endl;
         auto deviceFeatures = windowTraits->deviceFeatures = vsg::DeviceFeatures::create();
         deviceFeatures->get().samplerAnisotropy = VK_TRUE;
         deviceFeatures->get().depthClamp = VK_TRUE;
+
+        if (arguments.read("--shader-debug"))
+        {
+            shaderHints->defines.insert("SHADOWMAP_DEBUG");
+        }
 
         auto rasterizationState = vsg::RasterizationState::create();
         rasterizationState->depthClampEnable = VK_TRUE;
 
         auto pbr = options->shaderSets["pbr"] = vsg::createPhysicsBasedRenderingShaderSet(options);
         pbr->defaultGraphicsPipelineStates.push_back(rasterizationState);
+        pbr->defaultShaderHints = shaderHints;
+        pbr->variants.clear();
 
-        auto phong = options->shaderSets["phong"] = vsg::createPhysicsBasedRenderingShaderSet(options);
+        auto phong = options->shaderSets["phong"] = vsg::createPhongShaderSet(options);
         phong->defaultGraphicsPipelineStates.push_back(rasterizationState);
+        phong->defaultShaderHints = shaderHints;
+        phong->variants.clear();
 
         auto flat = options->shaderSets["flat"] = vsg::createPhysicsBasedRenderingShaderSet(options);
         flat->defaultGraphicsPipelineStates.push_back(rasterizationState);
+        flat->defaultShaderHints = shaderHints;
+        flat->variants.clear();
     }
 
     auto numCopies = arguments.value<unsigned int>(1, "-n");
@@ -213,20 +263,13 @@ int main(int argc, char** argv)
         }
     }
 
-    if (argc<=1)
+    if (argc <= 1)
     {
-        std::cout<<"Please specify model to load on command line."<<std::endl;
+        std::cout << "Please specify model to load on command line." << std::endl;
         return 0;
     }
 
     auto scene = vsg::Group::create();
-
-    unsigned int numLights = 2;
-    auto direction = arguments.value(vsg::dvec3(-0.25, 0.25, -1.0), "--direction");
-    auto numShadowMapsPerLight = arguments.value<uint32_t>(3, "--sm");
-    auto lambda = arguments.value<double>(0.25, "--lambda");
-    double maxShadowDistance = arguments.value<double>(1e8, "--sd");
-    double nearFarRatio = arguments.value<double>(0.001, "--nf");
 
     // load the models
     struct ModelBound
@@ -236,7 +279,7 @@ int main(int argc, char** argv)
     };
 
     std::list<ModelBound> models;
-    for(unsigned int ci = 0; ci < numCopies; ++ci)
+    for (unsigned int ci = 0; ci < numCopies; ++ci)
     {
         for (int i = 1; i < argc; ++i)
         {
@@ -253,7 +296,7 @@ int main(int argc, char** argv)
 
     if (models.empty())
     {
-        std::cout<<"Failed to load any models, please specify filenames of 3d models on the command line,"<<std::endl;
+        std::cout << "Failed to load any models, please specify filenames of 3d models on the command line," << std::endl;
         return 1;
     }
 
@@ -268,7 +311,7 @@ int main(int argc, char** argv)
     {
         // find the largest model diameter so we can use it to set up layout
         double maxDiameter = 0.0;
-        for(auto model : models)
+        for (auto model : models)
         {
             auto diameter = vsg::length(model.bounds.max - model.bounds.min);
             if (diameter > maxDiameter) maxDiameter = diameter;
@@ -282,12 +325,12 @@ int main(int argc, char** argv)
         vsg::dvec3 position = {0.0, 0.0, 0.0};
         double spacing = maxDiameter;
 
-        for(auto [node, bounds] : models)
+        for (auto [node, bounds] : models)
         {
             auto diameter = vsg::length(bounds.max - bounds.min);
             vsg::dvec3 origin((bounds.min.x + bounds.max.x) * 0.5,
-                                (bounds.min.y + bounds.max.y) * 0.5,
-                                bounds.min.z);
+                              (bounds.min.y + bounds.max.y) * 0.5,
+                              bounds.min.z);
             auto transform = vsg::MatrixTransform::create(vsg::translate(position) * vsg::scale(maxDiameter / diameter) * vsg::translate(-origin));
             transform->addChild(node);
 
@@ -314,7 +357,7 @@ int main(int argc, char** argv)
         auto center = (bounds.min + bounds.max) * 0.5;
         center.z = bounds.min.z;
 
-        auto transform = vsg::MatrixTransform::create( ellipsoidModel->computeLocalToWorldTransform(location) * vsg::scale(scale, scale, scale));
+        auto transform = vsg::MatrixTransform::create(ellipsoidModel->computeLocalToWorldTransform(location) * vsg::scale(scale, scale, scale));
         transform->addChild(scene);
 
         auto group = vsg::Group::create();
@@ -343,9 +386,9 @@ int main(int argc, char** argv)
             vsg::StateInfo stateInfo;
 
             double margin = bounds.max.z - bounds.min.z;
-            geomInfo.position.set((bounds.min.x + bounds.max.x)*0.5, (bounds.min.y + bounds.max.y)*0.5, 0.0);
-            geomInfo.dx.set(bounds.max.x - bounds.min.x + margin, 0.0, 0.0);
-            geomInfo.dy.set(0.0, bounds.max.y - bounds.min.y + margin, 0.0);
+            geomInfo.position.set(static_cast<float>(bounds.min.x + bounds.max.x) * 0.5f, static_cast<float>(bounds.min.y + bounds.max.y) * 0.5f, 0.0f);
+            geomInfo.dx.set(static_cast<float>(bounds.max.x - bounds.min.x + margin), 0.0f, 0.0f);
+            geomInfo.dy.set(0.0, static_cast<float>(bounds.max.y - bounds.min.y + margin), 0.0f);
             geomInfo.color.set(1.0f, 1.0f, 1.0f, 1.0f);
 
             stateInfo.two_sided = true;
@@ -363,16 +406,17 @@ int main(int argc, char** argv)
     {
         auto directionalLight = vsg::DirectionalLight::create();
         directionalLight->name = "directional";
-        directionalLight->color.set(1.0, 1.0, 1.0);
-        directionalLight->intensity = 0.9;
+        directionalLight->color.set(1.0f, 1.0f, 1.0f);
+        directionalLight->intensity = 0.98f;
         directionalLight->direction = direction;
-        directionalLight->shadowMaps = numShadowMapsPerLight;
+        directionalLight->shadowSettings = shadowSettings;
+
         scene->addChild(directionalLight);
 
         auto ambientLight = vsg::AmbientLight::create();
         ambientLight->name = "ambient";
-        ambientLight->color.set(1.0, 1.0, 1.0);
-        ambientLight->intensity = 0.1;
+        ambientLight->color.set(1.0f, 1.0f, 1.0f);
+        ambientLight->intensity = 0.02f;
         scene->addChild(ambientLight);
     }
 
@@ -383,13 +427,13 @@ int main(int argc, char** argv)
     auto animations = findAnimations.animations;
     auto animationGroups = findAnimations.animationGroups;
 
-    std::cout<<"Model contains "<<animations.size()<<" animations."<<std::endl;
-    for(auto& ag : animationGroups)
+    std::cout << "Model contains " << animations.size() << " animations." << std::endl;
+    for (auto& ag : animationGroups)
     {
-        std::cout<<"AnimationGroup "<<ag<<std::endl;
-        for(auto animation : ag->animations)
+        std::cout << "AnimationGroup " << ag << std::endl;
+        for (auto animation : ag->animations)
         {
-            std::cout<<"    animation : "<<animation->name<<std::endl;
+            std::cout << "    animation : " << animation->name << std::endl;
         }
     }
 
@@ -399,7 +443,6 @@ int main(int argc, char** argv)
         vsg::write(scene, outputFilename, options);
         return 0;
     }
-
 
     // create the viewer and assign window(s) to it
     auto viewer = vsg::Viewer::create();
@@ -449,12 +492,13 @@ int main(int argc, char** argv)
 
     viewer->compile();
 
-    std::cout<<"Compile time : "<<std::chrono::duration<double, std::chrono::seconds::period>(vsg::clock::now() - before_compile).count()*1000.0<<" ms"<<std::endl;;
+    std::cout << "Compile time : " << std::chrono::duration<double, std::chrono::seconds::period>(vsg::clock::now() - before_compile).count() * 1000.0 << " ms" << std::endl;
+    ;
 
     // start first animation if available
     if (autoPlay && !animations.empty())
     {
-        for(auto ag : animationGroups)
+        for (auto ag : animationGroups)
         {
             if (!ag->animations.empty()) viewer->animationManager->play(ag->animations.front());
         }
@@ -487,7 +531,13 @@ int main(int argc, char** argv)
     if (numFramesCompleted > 0.0)
     {
         std::cout << "Average frame rate = " << (numFramesCompleted / duration) << std::endl;
-        std::cout << "Average update time = " << (updateTime / numFramesCompleted)*1000.0 <<" ms"<< std::endl;
+        std::cout << "Average update time = " << (updateTime / numFramesCompleted) * 1000.0 << " ms" << std::endl;
+    }
+
+    if (auto profiler = instrumentation.cast<vsg::Profiler>())
+    {
+        instrumentation->finish();
+        profiler->log->report(std::cout);
     }
 
     return 0;

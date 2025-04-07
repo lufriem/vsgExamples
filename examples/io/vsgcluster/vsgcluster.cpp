@@ -7,54 +7,52 @@
 #include <iostream>
 
 #include "Broadcaster.h"
-#include "Receiver.h"
 #include "Packet.h"
+#include "Receiver.h"
 
 namespace cluster
 {
 
-class ViewerData : public vsg::Inherit<vsg::Object, ViewerData>
-{
-public:
-
-    bool alive = true;
-    vsg::ref_ptr<vsg::FrameStamp> frameStamp;
-    vsg::ref_ptr<vsg::LookAt> lookAt;
-
-    void read(vsg::Input& input) override
+    class ViewerData : public vsg::Inherit<vsg::Object, ViewerData>
     {
-        vsg::Object::read(input);
+    public:
+        bool alive = true;
+        vsg::ref_ptr<vsg::FrameStamp> frameStamp;
+        vsg::ref_ptr<vsg::LookAt> lookAt;
 
-        if (!frameStamp) frameStamp = vsg::FrameStamp::create();
-        if (!lookAt) lookAt = vsg::LookAt::create();
+        void read(vsg::Input& input) override
+        {
+            vsg::Object::read(input);
 
-        input.read("alive", alive);
-        input.read("frameCount", frameStamp->frameCount);
-        input.read("lookAt.eye", lookAt->eye);
-        input.read("lookAt.center", lookAt->center);
-        input.read("lookAt.up", lookAt->up);
-    }
+            if (!frameStamp) frameStamp = vsg::FrameStamp::create();
+            if (!lookAt) lookAt = vsg::LookAt::create();
 
-    void write(vsg::Output& output) const override
-    {
-        vsg::Object::write(output);
+            input.read("alive", alive);
+            input.read("frameCount", frameStamp->frameCount);
+            input.read("lookAt.eye", lookAt->eye);
+            input.read("lookAt.center", lookAt->center);
+            input.read("lookAt.up", lookAt->up);
+        }
 
-        output.write("alive", alive);
-        output.write("frameCount", frameStamp->frameCount);
-        output.write("lookAt.eye", lookAt->eye);
-        output.write("lookAt.center", lookAt->center);
-        output.write("lookAt.up", lookAt->up);
-    }
-};
+        void write(vsg::Output& output) const override
+        {
+            vsg::Object::write(output);
 
-}
+            output.write("alive", alive);
+            output.write("frameCount", frameStamp->frameCount);
+            output.write("lookAt.eye", lookAt->eye);
+            output.write("lookAt.center", lookAt->center);
+            output.write("lookAt.up", lookAt->up);
+        }
+    };
+
+} // namespace cluster
 
 // Provide the means for the vsg::type_name<class> to get the human readable class name.
 EVSG_type_name(cluster::ViewerData);
 
 // Register the ProjectorScene::create() method with vsg::ObjectFactory::instance() so it can be used for creating objects during reading.
 vsg::RegisterWithObjectFactoryProxy<cluster::ViewerData> s_Register_ViewerData;
-
 
 enum ViewerMode
 {
@@ -207,11 +205,6 @@ int main(int argc, char** argv)
 
     viewer->compile();
 
-    std::vector<uint64_t> buffer(1);
-    uint32_t buffer_size = buffer.size() * sizeof(decltype(buffer)::value_type);
-
-    std::cout << "buffer_size = " << buffer_size << std::endl;
-
     PacketBroadcaster broadcaster;
     broadcaster.broadcaster = bc;
 
@@ -235,13 +228,11 @@ int main(int argc, char** argv)
 
         if (rc)
         {
-            //unsigned int size = rc->receive(buffer.data(), buffer_size);
-            //std::cout << "received size = " << size << std::endl;
             auto object = receiver.receive();
             viewerData = object.cast<cluster::ViewerData>();
             if (viewerData)
             {
-                std::cout<<"received viewerData "<<viewerData->alive<<std::endl;
+                std::cout << "received viewerData " << viewerData->alive << std::endl;
 
                 lookAt->eye = viewerData->lookAt->eye;
                 lookAt->center = viewerData->lookAt->center;
@@ -249,7 +240,7 @@ int main(int argc, char** argv)
             }
             else
             {
-                std::cout<<"received "<<object<<std::endl;
+                std::cout << "received " << object << std::endl;
             }
         }
 

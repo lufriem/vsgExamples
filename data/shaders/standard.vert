@@ -1,7 +1,7 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-#pragma import_defines (VSG_INSTANCE_POSITIONS, VSG_BILLBOARD, VSG_DISPLACEMENT_MAP, VSG_SKINNING)
+#pragma import_defines (VSG_INSTANCE_POSITIONS, VSG_BILLBOARD, VSG_DISPLACEMENT_MAP, VSG_SKINNING, VSG_POINT_SPRITE)
 
 #define VIEW_DESCRIPTOR_SET 0
 #define MATERIAL_DESCRIPTOR_SET 1
@@ -11,15 +11,18 @@ layout(push_constant) uniform PushConstants {
     mat4 modelView;
 } pc;
 
-#ifdef VSG_DISPLACEMENT_MAP
-layout(set = MATERIAL_DESCRIPTOR_SET, binding = 6) uniform sampler2D displacementMap;
-#endif
-
 layout(location = 0) in vec3 vsg_Vertex;
 layout(location = 1) in vec3 vsg_Normal;
 layout(location = 2) in vec2 vsg_TexCoord0;
 layout(location = 3) in vec4 vsg_Color;
 
+#ifdef VSG_DISPLACEMENT_MAP
+layout(set = MATERIAL_DESCRIPTOR_SET, binding = 7) uniform sampler2D displacementMap;
+layout(set = MATERIAL_DESCRIPTOR_SET, binding = 8) uniform DisplacementMapScale
+{
+    vec3 value;
+} displacementMapScale;
+#endif
 
 #ifdef VSG_BILLBOARD
 layout(location = 4) in vec4 vsg_position_scaleDistance;
@@ -31,9 +34,9 @@ layout(location = 4) in vec3 vsg_position;
 layout(location = 5) in ivec4 vsg_JointIndices;
 layout(location = 6) in vec4 vsg_JointWeights;
 
-layout(set = MATERIAL_DESCRIPTOR_SET, binding = 11) uniform JointMatrices
+layout(set = MATERIAL_DESCRIPTOR_SET, binding = 11) buffer JointMatrices
 {
-	mat4 matrices[64];
+	mat4 matrices[];
 } joint;
 #endif
 
@@ -44,7 +47,12 @@ layout(location = 3) out vec2 texCoord0;
 
 layout(location = 5) out vec3 viewDir;
 
-out gl_PerVertex{ vec4 gl_Position; };
+out gl_PerVertex{
+    vec4 gl_Position;
+#ifdef VSG_POINT_SPRITE
+    float gl_PointSize;
+#endif
+};
 
 #ifdef VSG_BILLBOARD
 mat4 computeBillboadMatrix(vec4 center_eye, float autoScaleDistance)
@@ -71,8 +79,7 @@ void main()
     vec4 normal = vec4(vsg_Normal, 0.0);
 
 #ifdef VSG_DISPLACEMENT_MAP
-    // TODO need to pass as as uniform or per instance attributes
-    vec3 scale = vec3(1.0, 1.0, 1.0);
+    vec3 scale = displacementMapScale.value;
 
     vertex.xyz = vertex.xyz + vsg_Normal * (texture(displacementMap, vsg_TexCoord0.st).s * scale.z);
 
@@ -126,4 +133,8 @@ void main()
 
     vertexColor = vsg_Color;
     texCoord0 = vsg_TexCoord0;
+
+#ifdef VSG_POINT_SPRITE
+    gl_PointSize = 1.0;
+#endif
 }

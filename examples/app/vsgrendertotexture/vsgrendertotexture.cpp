@@ -50,7 +50,7 @@ vsg::ref_ptr<vsg::RenderGraph> createOffscreenRendergraph(vsg::Context& context,
     // create image for color attachment
     auto colorImage = vsg::Image::create();
     colorImage->imageType = VK_IMAGE_TYPE_2D;
-    colorImage->format = VK_FORMAT_R8G8B8A8_UNORM;
+    colorImage->format = VK_FORMAT_R8G8B8A8_SRGB;
     colorImage->extent = attachmentExtent;
     colorImage->mipLevels = 1;
     colorImage->arrayLayers = 1;
@@ -104,7 +104,7 @@ vsg::ref_ptr<vsg::RenderGraph> createOffscreenRendergraph(vsg::Context& context,
     // attachment descriptions
     vsg::RenderPass::Attachments attachments(2);
     // Color attachment
-    attachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+    attachments[0].format = VK_FORMAT_R8G8B8A8_SRGB;
     attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
     attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -166,7 +166,7 @@ vsg::ref_ptr<vsg::RenderGraph> createOffscreenRendergraph(vsg::Context& context,
     rendergraph->framebuffer = fbuf;
 
     rendergraph->clearValues.resize(2);
-    rendergraph->clearValues[0].color = {{0.4f, 0.2f, 0.4f, 1.0f}};
+    rendergraph->clearValues[0].color = vsg::sRGB_to_linear(0.4f, 0.2f, 0.4f, 1.0f);
     rendergraph->clearValues[1].depthStencil = VkClearDepthStencilValue{0.0f, 0};
 
     return rendergraph;
@@ -410,6 +410,10 @@ int main(int argc, char** argv)
     auto rtt_view = vsg::View::create(offscreenCamera, vsg_scene);
     rtt_RenderGraph->addChild(rtt_view);
 
+    // add lighting
+    auto headlight = vsg::createHeadlight();
+    rtt_view->addChild(headlight);
+
     // Planes geometry that uses the rendered scene as a texture map
     vsg::ref_ptr<vsg::Node> planes = createPlanes(colorImage);
     auto camera = createCameraForScene(planes, window->extent2D());
@@ -422,7 +426,7 @@ int main(int argc, char** argv)
 
     if (nestedCommandGraph)
     {
-        std::cout<<"Nested CommandGraph, with nested RTT CommandGraph as a child on the main CommandGraph. "<<std::endl;
+        std::cout << "Nested CommandGraph, with nested RTT CommandGraph as a child on the main CommandGraph. " << std::endl;
         auto rtt_commandGraph = vsg::CommandGraph::create(window);
         rtt_commandGraph->submitOrder = -1; // render before the main_commandGraph
         rtt_commandGraph->addChild(rtt_RenderGraph);
@@ -435,7 +439,7 @@ int main(int argc, char** argv)
     }
     else if (separateCommandGraph)
     {
-        std::cout<<"Seperate CommandGraph with RTT CommandGraph first, then main CommandGraph second."<<std::endl;
+        std::cout << "Seperate CommandGraph with RTT CommandGraph first, then main CommandGraph second." << std::endl;
         auto rtt_commandGraph = vsg::CommandGraph::create(window);
         rtt_commandGraph->submitOrder = -1; // render before the main_commandGraph
         rtt_commandGraph->addChild(rtt_RenderGraph);
@@ -447,7 +451,7 @@ int main(int argc, char** argv)
     }
     else
     {
-        std::cout<<"Single CommandGraph containing by the RTT and main RenderGraphs"<<std::endl;
+        std::cout << "Single CommandGraph containing by the RTT and main RenderGraphs" << std::endl;
         // Place the offscreen RenderGraph before the plane geometry RenderGraph
         auto commandGraph = vsg::CommandGraph::create(window);
         commandGraph->addChild(rtt_RenderGraph);
@@ -460,7 +464,7 @@ int main(int argc, char** argv)
 
     if (multiThreading)
     {
-        std::cout<<"Enabled multi-threading"<<std::endl;
+        std::cout << "Enabled multi-threading" << std::endl;
         viewer->setupThreading();
     }
 

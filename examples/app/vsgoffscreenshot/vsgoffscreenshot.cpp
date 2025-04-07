@@ -32,7 +32,7 @@ bool supportsBlit(vsg::ref_ptr<vsg::Device> device, VkFormat format)
     VkFormatProperties srcFormatProperties;
     vkGetPhysicalDeviceFormatProperties(*(physicalDevice), format, &srcFormatProperties);
     VkFormatProperties destFormatProperties;
-    vkGetPhysicalDeviceFormatProperties(*(physicalDevice), VK_FORMAT_R8G8B8A8_UNORM, &destFormatProperties);
+    vkGetPhysicalDeviceFormatProperties(*(physicalDevice), VK_FORMAT_R8G8B8A8_SRGB, &destFormatProperties);
     return ((srcFormatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) != 0) &&
            ((destFormatProperties.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT) != 0);
 }
@@ -43,7 +43,7 @@ vsg::ref_ptr<vsg::Image> createCaptureImage(
     const VkExtent2D& extent)
 {
     // blit to RGBA if supported
-    auto targetFormat = supportsBlit(device, sourceFormat) ? VK_FORMAT_R8G8B8A8_UNORM : sourceFormat;
+    auto targetFormat = supportsBlit(device, sourceFormat) ? VK_FORMAT_R8G8B8A8_SRGB : sourceFormat;
 
     // create image to write to
     auto image = vsg::Image::create();
@@ -51,6 +51,8 @@ vsg::ref_ptr<vsg::Image> createCaptureImage(
     image->extent = {extent.width, extent.height, 1};
     image->arrayLayers = 1;
     image->mipLevels = 1;
+    image->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    image->samples = VK_SAMPLE_COUNT_1_BIT;
     image->tiling = VK_IMAGE_TILING_LINEAR;
     image->usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
@@ -125,9 +127,7 @@ vsg::ref_ptr<vsg::Commands> createTransferCommands(
     commands->addChild(cmd_transitionForTransferBarrier);
 
     if (
-        sourceImage->format == destinationImage->format
-        && sourceImage->extent.width == destinationImage->extent.width
-        && sourceImage->extent.height == destinationImage->extent.height)
+        sourceImage->format == destinationImage->format && sourceImage->extent.width == destinationImage->extent.width && sourceImage->extent.height == destinationImage->extent.height)
     {
         // use vkCmdCopyImage
         VkImageCopy region{};
@@ -389,7 +389,7 @@ vsg::ref_ptr<vsg::Framebuffer> createOffscreenFramebuffer(
     vsg::ref_ptr<vsg::ImageView> transferImageView,
     VkSampleCountFlagBits const samples)
 {
-    VkFormat imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    VkFormat imageFormat = VK_FORMAT_B8G8R8A8_SRGB;
     VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
     bool requiresDepthRead = false;
 
@@ -446,17 +446,22 @@ std::tuple<vsg::ref_ptr<vsg::Camera>, vsg::ref_ptr<vsg::Perspective>> createCame
     return std::tie(camera, perspective);
 }
 
-void replaceChild(vsg::Group* group, vsg::ref_ptr<vsg::Node> previous, vsg::ref_ptr<vsg::Node> replacement)
+void replaceChild(vsg::Switch* toggle, vsg::ref_ptr<vsg::Node> previous, vsg::ref_ptr<vsg::Node> replacement)
 {
-    for (auto& child : group->children)
+    bool found = false;
+    for (auto& child : toggle->children)
     {
-        if (child == previous)
+        if (child.node == previous)
         {
-            child = replacement;
+            child.node = replacement;
+            found = true;
         }
     }
+    if (!found)
+        vsg::info("Warning: replaceChild failed to find previous child\n");
+    else
+        vsg::info("replaceChild succeeded\n");
 }
-
 
 vsg::ref_ptr<vsg::Data> getImageData(vsg::ref_ptr<vsg::Viewer> viewer, vsg::ref_ptr<vsg::Device> device, vsg::ref_ptr<vsg::Image> captureImage)
 {
@@ -648,7 +653,7 @@ int main(int argc, char** argv)
     auto offscreenCommandGraph = vsg::CommandGraph::create(window);
     offscreenCommandGraph->submitOrder = -1; // render before the displayCommandGraph
 
-    VkFormat offscreenImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    VkFormat offscreenImageFormat = VK_FORMAT_B8G8R8A8_SRGB;
     VkExtent2D offscreenExtent{windowTraits->width, windowTraits->height};
 
     auto transferImageView = createTransferImageView(device, offscreenImageFormat, offscreenExtent, VK_SAMPLE_COUNT_1_BIT);
@@ -688,6 +693,7 @@ int main(int argc, char** argv)
     offscreenCommandGraph->addChild(offscreenSwitch);
 
     auto offscreenView = vsg::View::create(offscreenCamera, vsg_scene);
+    offscreenView->addChild(vsg::createHeadlight());
     offscreenRenderGraph->addChild(offscreenView);
 
     auto screenshotHandler = ScreenshotHandler::create();
@@ -741,6 +747,7 @@ int main(int argc, char** argv)
                 auto prevCaptureCommands = captureCommands;
 
                 offscreenExtent = displayExtent;
+                offscreenRenderGraph->renderArea = displayCamera->getRenderArea();
                 offscreenPerspective->aspectRatio = static_cast<double>(offscreenExtent.width) / static_cast<double>(offscreenExtent.height);
                 offscreenCamera->viewportState->set(0, 0, offscreenExtent.width, offscreenExtent.height);
 
@@ -748,9 +755,8 @@ int main(int argc, char** argv)
                 captureImage = createCaptureImage(device, offscreenImageFormat, offscreenExtent);
                 captureCommands = createTransferCommands(device, transferImageView->image, captureImage);
 
-                replaceChild(offscreenCommandGraph, prevCaptureCommands, captureCommands);
+                replaceChild(offscreenSwitch, prevCaptureCommands, captureCommands);
                 offscreenRenderGraph->framebuffer = createOffscreenFramebuffer(device, transferImageView, samples);
-                offscreenRenderGraph->resized();
                 vsg::info("offscreen render resized to: ", offscreenExtent.width, "x", offscreenExtent.height);
             }
         }

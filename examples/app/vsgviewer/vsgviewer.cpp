@@ -50,6 +50,9 @@ int main(int argc, char** argv)
         // set up defaults and read command line arguments to override them
         vsg::CommandLine arguments(&argc, argv);
 
+        // if we want to redirect std::cout and std::cerr to the vsg::Logger call vsg::Logger::redirect_stdout()
+        if (arguments.read({"--redirect-std", "-r"})) vsg::Logger::instance()->redirect_std();
+
         // set up vsg::Options to pass in filepaths, ReaderWriters and other IO related options to use when reading and writing files.
         auto options = vsg::Options::create();
         options->sharedObjects = vsg::SharedObjects::create();
@@ -69,7 +72,6 @@ int main(int argc, char** argv)
         windowTraits->apiDumpLayer = arguments.read({"--api", "-a"});
         windowTraits->synchronizationLayer = arguments.read("--sync");
         bool reportAverageFrameRate = arguments.read("--fps");
-        if (int mt = 0; arguments.read({"--memory-tracking", "--mt"}, mt)) vsg::Allocator::instance()->setMemoryTracking(mt);
         if (arguments.read("--double-buffer")) windowTraits->swapchainPreferences.imageCount = 2;
         if (arguments.read("--triple-buffer")) windowTraits->swapchainPreferences.imageCount = 3; // default
         if (arguments.read("--IMMEDIATE")) { windowTraits->swapchainPreferences.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR; }
@@ -90,10 +92,12 @@ int main(int argc, char** argv)
             reportAverageFrameRate = true;
         }
 
+        bool multiThreading = arguments.read("--mt");
         if (arguments.read({"--fullscreen", "--fs"})) windowTraits->fullscreen = true;
         if (arguments.read({"--window", "-w"}, windowTraits->width, windowTraits->height)) { windowTraits->fullscreen = false; }
         if (arguments.read({"--no-frame", "--nf"})) windowTraits->decoration = false;
         if (arguments.read("--or")) windowTraits->overrideRedirect = true;
+        auto maxTime = arguments.value(std::numeric_limits<double>::max(), "--max-time");
 
         if (arguments.read("--d32")) windowTraits->depthFormat = VK_FORMAT_D32_SFLOAT;
         if (arguments.read("--sRGB")) windowTraits->swapchainPreferences.surfaceFormat = {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
@@ -102,6 +106,7 @@ int main(int argc, char** argv)
         arguments.read("--screen", windowTraits->screenNum);
         arguments.read("--display", windowTraits->display);
         arguments.read("--samples", windowTraits->samples);
+        if (int log_level = 0; arguments.read("--log-level", log_level)) vsg::Logger::instance()->level = vsg::Logger::Level(log_level);
         auto numFrames = arguments.value(-1, "-f");
         auto pathFilename = arguments.value<vsg::Path>("", "-p");
         auto loadLevels = arguments.value(0, "--load-levels");
@@ -110,6 +115,28 @@ int main(int argc, char** argv)
         auto nearFarRatio = arguments.value<double>(0.001, "--nfr");
         if (arguments.read("--rgb")) options->mapRGBtoRGBAHint = false;
 
+        bool depthClamp = arguments.read({"--dc", "--depthClamp"});
+        if (depthClamp)
+        {
+            std::cout << "Enabled depth clamp." << std::endl;
+            auto deviceFeatures = windowTraits->deviceFeatures = vsg::DeviceFeatures::create();
+            deviceFeatures->get().samplerAnisotropy = VK_TRUE;
+            deviceFeatures->get().depthClamp = VK_TRUE;
+        }
+
+        vsg::ref_ptr<vsg::ResourceHints> resourceHints;
+        if (auto resourceHintsFilename = arguments.value<vsg::Path>("", "--rh"))
+        {
+            resourceHints = vsg::read_cast<vsg::ResourceHints>(resourceHintsFilename, options);
+        }
+
+        if (auto outputResourceHintsFilename = arguments.value<vsg::Path>("", "--orh"))
+        {
+            if (!resourceHints) resourceHints = vsg::ResourceHints::create();
+            vsg::write(resourceHints, outputResourceHintsFilename, options);
+            return 0;
+        }
+
         if (arguments.read({"--shader-debug-info", "--sdi"}))
         {
             enableGenerateDebugInfo(options);
@@ -117,6 +144,7 @@ int main(int argc, char** argv)
         }
 
         if (int log_level = 0; arguments.read("--log-level", log_level)) vsg::Logger::instance()->level = vsg::Logger::Level(log_level);
+        auto logFilename = arguments.value<vsg::Path>("", "--log");
 
         vsg::ref_ptr<vsg::Instrumentation> instrumentation;
         if (arguments.read({"--gpu-annotation", "--ga"}) && vsg::isExtensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
@@ -124,11 +152,32 @@ int main(int argc, char** argv)
             windowTraits->debugUtils = true;
 
             auto gpu_instrumentation = vsg::GpuAnnotation::create();
-            if (arguments.read("--name")) gpu_instrumentation->labelType = vsg::GpuAnnotation::SourceLocation_name;
-            else if (arguments.read("--className")) gpu_instrumentation->labelType = vsg::GpuAnnotation::Object_className;
-            else if (arguments.read("--func")) gpu_instrumentation->labelType = vsg::GpuAnnotation::SourceLocation_function;
+            if (arguments.read("--name"))
+                gpu_instrumentation->labelType = vsg::GpuAnnotation::SourceLocation_name;
+            else if (arguments.read("--className"))
+                gpu_instrumentation->labelType = vsg::GpuAnnotation::Object_className;
+            else if (arguments.read("--func"))
+                gpu_instrumentation->labelType = vsg::GpuAnnotation::SourceLocation_function;
 
             instrumentation = gpu_instrumentation;
+        }
+        else if (arguments.read({"--profiler", "--pr"}))
+        {
+            // set Profiler options
+            auto settings = vsg::Profiler::Settings::create();
+            arguments.read("--cpu", settings->cpu_instrumentation_level);
+            arguments.read("--gpu", settings->gpu_instrumentation_level);
+            arguments.read("--log-size", settings->log_size);
+
+            // create the profiler
+            instrumentation = vsg::Profiler::create(settings);
+        }
+
+        vsg::Affinity affinity;
+        uint32_t cpu = 0;
+        while (arguments.read("-c", cpu))
+        {
+            affinity.cpus.insert(cpu);
         }
 
         // should animations be automatically played
@@ -221,9 +270,17 @@ int main(int argc, char** argv)
         // add close handler to respond to the close window button and pressing escape
         viewer->addEventHandler(vsg::CloseHandler::create(viewer));
 
-        auto animationPathHandler = vsg::RecordAnimationPathHandler::create(camera, pathFilename, options);
-        animationPathHandler->printFrameStatsToConsole = true;
-        viewer->addEventHandler(animationPathHandler);
+        auto cameraAnimation = vsg::CameraAnimationHandler::create(camera, pathFilename, options);
+        viewer->addEventHandler(cameraAnimation);
+        if (autoPlay && cameraAnimation->animation)
+        {
+            cameraAnimation->play();
+
+            if (reportAverageFrameRate && maxTime == std::numeric_limits<double>::max())
+            {
+                maxTime = cameraAnimation->animation->maxTime();
+            }
+        }
 
         viewer->addEventHandler(vsg::Trackball::create(camera, ellipsoidModel));
 
@@ -245,12 +302,49 @@ int main(int argc, char** argv)
 
         if (instrumentation) viewer->assignInstrumentation(instrumentation);
 
-        viewer->compile();
+        if (multiThreading)
+        {
+            viewer->setupThreading();
+
+            if (affinity)
+            {
+                auto cpu_itr = affinity.cpus.begin();
+
+                // set affinity of main thread
+                if (cpu_itr != affinity.cpus.end())
+                {
+                    std::cout << "vsg::setAffinity() " << *cpu_itr << std::endl;
+                    vsg::setAffinity(vsg::Affinity(*cpu_itr++));
+                }
+
+                for (auto& thread : viewer->threads)
+                {
+                    if (thread.joinable() && cpu_itr != affinity.cpus.end())
+                    {
+                        std::cout << "vsg::setAffinity(" << thread.get_id() << ") " << *cpu_itr << std::endl;
+                        vsg::setAffinity(thread, vsg::Affinity(*cpu_itr++));
+                    }
+                }
+            }
+        }
+        else if (affinity)
+        {
+            std::cout << "vsg::setAffinity(";
+            for (auto cpu_num : affinity.cpus)
+            {
+                std::cout << " " << cpu_num;
+            }
+            std::cout << " )" << std::endl;
+
+            vsg::setAffinity(affinity);
+        }
+
+        viewer->compile(resourceHints);
 
         if (maxPagedLOD > 0)
         {
             // set targetMaxNumPagedLODWithHighResSubgraphs after Viewer::compile() as it will assign any DatabasePager if required.
-            for(auto& task : viewer->recordAndSubmitTasks)
+            for (auto& task : viewer->recordAndSubmitTasks)
             {
                 if (task->databasePager) task->databasePager->targetMaxNumPagedLODWithHighResSubgraphs = maxPagedLOD;
             }
@@ -260,7 +354,7 @@ int main(int argc, char** argv)
         {
             // find any animation groups in the loaded scene graph and play the first animation in each of the animation groups.
             auto animationGroups = vsg::visit<vsg::FindAnimations>(vsg_scene).animationGroups;
-            for(auto ag : animationGroups)
+            for (auto ag : animationGroups)
             {
                 if (!ag->animations.empty()) viewer->animationManager->play(ag->animations.front());
             }
@@ -269,7 +363,7 @@ int main(int argc, char** argv)
         viewer->start_point() = vsg::clock::now();
 
         // rendering main loop
-        while (viewer->advanceToNextFrame() && (numFrames < 0 || (numFrames--) > 0))
+        while (viewer->advanceToNextFrame() && (numFrames < 0 || (numFrames--) > 0) && (viewer->getFrameStamp()->simulationTime < maxTime))
         {
             // pass any events into EventHandlers assigned to the Viewer
             viewer->handleEvents();
@@ -285,7 +379,21 @@ int main(int argc, char** argv)
         {
             auto fs = viewer->getFrameStamp();
             double fps = static_cast<double>(fs->frameCount) / std::chrono::duration<double, std::chrono::seconds::period>(vsg::clock::now() - viewer->start_point()).count();
-            std::cout<<"Average frame rate = "<<fps<<" fps"<<std::endl;
+            std::cout << "Average frame rate = " << fps << " fps" << std::endl;
+        }
+
+        if (auto profiler = instrumentation.cast<vsg::Profiler>())
+        {
+            instrumentation->finish();
+            if (logFilename)
+            {
+                std::ofstream fout(logFilename);
+                profiler->log->report(fout);
+            }
+            else
+            {
+                profiler->log->report(std::cout);
+            }
         }
     }
     catch (const vsg::Exception& ve)

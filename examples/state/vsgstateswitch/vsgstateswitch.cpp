@@ -28,7 +28,6 @@ vsg::ref_ptr<vsg::Camera> createCameraForScene(vsg::Node* scenegraph, int32_t x,
     return vsg::Camera::create(perspective, lookAt, viewportstate);
 }
 
-
 class InsertStateSwitch : public vsg::Visitor
 {
 public:
@@ -56,7 +55,7 @@ public:
 
         *alternative_pipeline = pipeline;
 
-        for(auto& pipelineState : alternative_pipeline->pipelineStates)
+        for (auto& pipelineState : alternative_pipeline->pipelineStates)
         {
             if (auto rasterizationState = pipelineState.cast<vsg::RasterizationState>())
             {
@@ -71,10 +70,10 @@ public:
 
     void apply(vsg::StateGroup& sg) override
     {
-        if (visited.count(&sg)>0) return;
+        if (visited.count(&sg) > 0) return;
         visited.insert(&sg);
 
-        for(auto& sc : sg.stateCommands)
+        for (auto& sc : sg.stateCommands)
         {
             if (auto bgp = sc->cast<vsg::BindGraphicsPipeline>())
             {
@@ -125,7 +124,7 @@ int main(int argc, char** argv)
 #endif
 
     vsg::Path filename = "models/lz.vsgt";
-    if (argc>1) filename = arguments[1];
+    if (argc > 1) filename = arguments[1];
     auto scenegraph = vsg::read_cast<vsg::Node>(filename, options);
     if (!scenegraph)
     {
@@ -172,12 +171,12 @@ int main(int argc, char** argv)
     uint32_t height = window->extent2D().height;
 
     // create the vsg::RenderGraph and associated vsg::View
-    auto main_camera = createCameraForScene(scenegraph, 0, 0, width/2, height);
+    auto main_camera = createCameraForScene(scenegraph, 0, 0, width / 2, height);
     auto main_view = vsg::View::create(main_camera, scenegraph);
     main_view->mask = mask_1;
 
     // create a RenderGraph to add a secondary vsg::View on the top right part of the window.
-    auto secondary_camera = createCameraForScene(scenegraph, width/2, 0, width/2, height);
+    auto secondary_camera = createCameraForScene(scenegraph, width / 2, 0, width / 2, height);
     auto secondary_view = vsg::View::create(secondary_camera, scenegraph);
     secondary_view->mask = mask_2;
 
@@ -193,7 +192,7 @@ int main(int argc, char** argv)
         std::cout << "Using a RenderGraph per View" << std::endl;
         auto main_RenderGraph = vsg::RenderGraph::create(window, main_view);
         auto secondary_RenderGraph = vsg::RenderGraph::create(window, secondary_view);
-        secondary_RenderGraph->clearValues[0].color = {{0.2f, 0.2f, 0.2f, 1.0f}};
+        secondary_RenderGraph->clearValues[0].color = vsg::sRGB_to_linear(0.2f, 0.2f, 0.2f, 1.0f);
 
         auto commandGraph = vsg::CommandGraph::create(window);
         commandGraph->addChild(main_RenderGraph);
@@ -211,7 +210,7 @@ int main(int argc, char** argv)
         // clear the depth buffer before view2 gets rendered
 
         VkClearValue colorClearValue{};
-        colorClearValue.color = {{0.2f, 0.2f, 0.2f, 1.0f}};
+        colorClearValue.color = vsg::sRGB_to_linear(0.2f, 0.2f, 0.2f, 1.0f);
         VkClearAttachment color_attachment{VK_IMAGE_ASPECT_COLOR_BIT, 0, colorClearValue};
 
         VkClearValue depthClearValue{};

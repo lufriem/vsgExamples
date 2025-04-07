@@ -5,13 +5,15 @@
 struct MyOperation : public vsg::Inherit<vsg::Operation, MyOperation>
 {
     uint32_t value = 0;
-    MyOperation(uint32_t in_value) : value(in_value) {}
+    MyOperation(uint32_t in_value) :
+        value(in_value) {}
 
     void run() override
     {
         auto level = vsg::Logger::Level(1 + value % 4);
-        vsg::info("info() operation ",value);
-        vsg::log(level, "log() operation ",value);
+        vsg::info("info() operation ", value);
+        vsg::log(level, "log() operation ", value);
+        std::cout << "cout operation " << value << std::endl;
     }
 };
 
@@ -25,6 +27,10 @@ int main(int argc, char** argv)
     mt_logger->setThreadPrefix(std::this_thread::get_id(), "main | ");
 
     vsg::CommandLine arguments(&argc, argv);
+
+    // if we want to redirect std::cout and std::cerr to the vsg::Logger call vsg::Logger::redirect_stdout()
+    if (arguments.read({"--redirect-std", "-r"})) vsg::Logger::instance()->redirect_std();
+
     auto numThreads = arguments.value<size_t>(16, "-t");
     auto count = arguments.value<size_t>(100, "-n");
     auto level = vsg::Logger::Level(arguments.value(0, "-l"));
@@ -38,7 +44,7 @@ int main(int argc, char** argv)
     if (!defaultThreadPrefix)
     {
         uint32_t threadNum = 0;
-        for(auto& thread : operationThreads->threads)
+        for (auto& thread : operationThreads->threads)
         {
             auto prefix = vsg::make_string("thread ", threadNum++, " | ");
             mt_logger->setThreadPrefix(thread.get_id(), prefix);
@@ -51,7 +57,7 @@ int main(int argc, char** argv)
     // add operations to the OperationThreads queue.
     // note, as the threads are already running they can immediately pull these operations off the queue as we add them,
     // so by the end of this loop many will already have been processed.
-    for(size_t i=0; i<count; ++i)
+    for (size_t i = 0; i < count; ++i)
     {
         operationThreads->add(MyOperation::create(i));
     }
@@ -59,7 +65,7 @@ int main(int argc, char** argv)
     // have the main thread get and run operations from the OperationThreads queue of operations
 
     vsg::info("Starting to process operations.");
-    while(auto op = operationThreads->queue->take())
+    while (auto op = operationThreads->queue->take())
     {
         op->run();
     }

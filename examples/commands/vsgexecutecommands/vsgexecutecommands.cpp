@@ -175,7 +175,6 @@ int main(int argc, char** argv)
     vsg::Path filename;
     if (argc > 1) filename = arguments[1];
 
-
     vsg::ref_ptr<vsg::Node> vsg_scene;
     if (filename)
     {
@@ -194,7 +193,6 @@ int main(int argc, char** argv)
 
     // create the viewer and assign window(s) to it
     auto viewer = vsg::Viewer::create();
-
 
     auto window1 = vsg::Window::create(traits);
     if (!window1)
@@ -279,20 +277,14 @@ int main(int argc, char** argv)
     // assign a CloseHandler to the Viewer to respond to pressing Escape or the window close button
     viewer->addEventHandlers({vsg::CloseHandler::create(viewer)});
 
-    if (!pathFilename)
+    if (pathFilename)
     {
-        viewer->addEventHandler(vsg::Trackball::create(camera));
+        auto cameraAnimation = vsg::CameraAnimationHandler::create(camera, pathFilename, options);
+        viewer->addEventHandler(cameraAnimation);
+        if (cameraAnimation->animation) cameraAnimation->play();
     }
-    else
-    {
-        auto animationPath = vsg::read_cast<vsg::AnimationPath>(pathFilename, options);
-        if (!animationPath)
-        {
-            std::cout<<"Warning: unable to read animation path : "<<pathFilename<<std::endl;
-            return 1;
-        }
-        viewer->addEventHandler(vsg::AnimationPathHandler::create(camera, animationPath, viewer->start_point()));
-    }
+
+    viewer->addEventHandler(vsg::Trackball::create(camera));
 
     // main frame loop
     while (viewer->advanceToNextFrame() && (numFrames < 0 || (numFrames--) > 0))

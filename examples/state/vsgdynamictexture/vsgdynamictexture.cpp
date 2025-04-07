@@ -11,16 +11,16 @@ public:
     {
         using value_type = typename A::value_type;
         float r_mult = 1.0f / static_cast<float>(image.height() - 1);
-        float r_offset = 0.5f + sin(value) * 0.25f;
+        float r_offset = 0.5f + static_cast<float>(sin(value)) * 0.25f;
 
         float c_mult = 1.0f / static_cast<float>(image.width() - 1);
-        float c_offset = 0.5f + cos(value) * 0.25f;
+        float c_offset = 0.5f + static_cast<float>(cos(value)) * 0.25f;
 
-        for (size_t r = 0; r < image.height(); ++r)
+        for (uint32_t r = 0; r < image.height(); ++r)
         {
             float r_ratio = static_cast<float>(r) * r_mult;
             value_type* ptr = &image.at(0, r);
-            for (size_t c = 0; c < image.width(); ++c)
+            for (uint32_t c = 0; c < image.width(); ++c)
             {
                 float c_ratio = static_cast<float>(c) * c_mult;
 
@@ -95,8 +95,12 @@ int main(int argc, char** argv)
     if (arguments.read("--rgb")) arrayType = USE_RGB;
     if (arguments.read("--rgba")) arrayType = USE_RGBA;
     auto image_size = arguments.value<uint32_t>(256, "-s");
-    bool lateTransfer = arguments.read("--late");
     bool multiThreading = arguments.read("--mt");
+    vsg::DataVariance dataVariance = vsg::DYNAMIC_DATA;
+    if (arguments.read("--static"))
+        dataVariance = vsg::STATIC_DATA;
+    else if (arguments.read("--late"))
+        dataVariance = vsg::DYNAMIC_DATA_TRANSFER_AFTER_RECORD;
 
     vsg::GeometryInfo geomInfo;
     vsg::StateInfo stateInfo;
@@ -147,6 +151,7 @@ int main(int argc, char** argv)
         // use float image - typically for displacementMap
         textureData = vsg::floatArray2D::create(image_size, image_size);
         textureData->properties.format = VK_FORMAT_R32_SFLOAT;
+        textureData->properties.dataVariance = dataVariance;
         break;
     case (USE_RGB):
         // note, RGB image data has to be converted to RGBA when copying to a VkImage,
@@ -155,16 +160,15 @@ int main(int argc, char** argv)
         // one approach, illustrated in the vsgdynamictexture_cs example, for avoiding this conversion overhead is to use a compute shader to map the RGB data to RGBA.
         textureData = vsg::vec3Array2D::create(image_size, image_size);
         textureData->properties.format = VK_FORMAT_R32G32B32_SFLOAT;
+        textureData->properties.dataVariance = dataVariance;
         break;
     case (USE_RGBA):
         // R, RG and RGBA data can be copied to VkImage without any conversion so is efficient, while RGB requires conversion, see above explanation
         textureData = vsg::vec4Array2D::create(image_size, image_size);
         textureData->properties.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        textureData->properties.dataVariance = dataVariance;
         break;
     }
-
-    // set the dynamic hint to tell the Viewer::compile() to assign this vsg::Data to a vsg::TransferTask
-    textureData->properties.dataVariance = lateTransfer ? vsg::DYNAMIC_DATA_TRANSFER_AFTER_RECORD : vsg::DYNAMIC_DATA;
 
     // initialize the image
     UpdateImage updateImage;

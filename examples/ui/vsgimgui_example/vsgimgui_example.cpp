@@ -52,7 +52,7 @@ public:
         {
             ImGui::Begin("Hello, world!"); // Create a window called "Hello, world!" and append into it.
 
-            ImGui::Text("Some useful message here.");                 // Display some text (you can use format strings too)
+            ImGui::Text("Some useful message here.");                // Display some text (you can use format strings too)
             ImGui::Checkbox("Demo Window", &params->showDemoWindow); // Edit bools storing our window open/close state
             ImGui::Checkbox("Another Window", &params->showSecondWindow);
             ImGui::Checkbox("ImPlot Demo Window", &params->showImPlotDemoWindow);
@@ -62,7 +62,7 @@ public:
             }
 
             ImGui::SliderFloat("float", &params->dist, 0.0f, 1.0f);        // Edit 1 float using a slider from 0.0f to 1.0f
-            ImGui::ColorEdit3("clear color", (float*)&params->clearColor); // Edit 3 floats representing a color
+            ImGui::ColorEdit3("clear color", (float*)&params->clearColor); // Edit 3 floats representing a color. Beware: the color space will match the rendering color space, typically linear, whereas colour pickers are typically sRGB.
 
             if (ImGui::Button("Button")) // Buttons return true when clicked (most widgets return true when edited/activated)
                 params->counter++;
@@ -110,8 +110,8 @@ public:
                 ImVec2 window_pos, window_pos_pivot;
                 window_pos.x = work_pos.x + PAD;
                 window_pos.y = work_pos.y + work_size.y - PAD;
-                window_pos_pivot.x =  0.0f;
-                window_pos_pivot.y =  1.0f;
+                window_pos_pivot.x = 0.0f;
+                window_pos_pivot.y = 1.0f;
                 ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
                 window_flags |= ImGuiWindowFlags_NoMove;
                 ImGui::SetNextWindowBgAlpha(0.0f); // Transparent background
@@ -129,7 +129,7 @@ public:
             if (params->showImagesWindow)
             {
                 ImGui::Begin("Image Window", &params->showImagesWindow);
-                ImGui::Text("An texture:");
+                ImGui::Text("A texture:");
                 // The logo texture is big, show it at half size
 
                 ImGui::Image(texture->id(cb.deviceID), ImVec2(texture->width / 2.0f, texture->height / 2.0f));
@@ -139,9 +139,9 @@ public:
                 //
                 // Make a small square button
                 if (ImGui::ImageButton("Button", texture->id(cb.deviceID),
-                                    ImVec2(32.0f, 32.0f),
-                                    ImVec2(0.0f, 0.0f),
-                                    squareUV))
+                                       ImVec2(32.0f, 32.0f),
+                                       ImVec2(0.0f, 0.0f),
+                                       squareUV))
                     params->counter++;
 
                 ImGui::SameLine();
@@ -175,6 +175,8 @@ int main(int argc, char** argv)
 
     windowTraits->debugLayer = arguments.read({"--debug", "-d"});
     windowTraits->apiDumpLayer = arguments.read({"--api", "-a"});
+    if (arguments.read("--sRGB")) windowTraits->swapchainPreferences.surfaceFormat = {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+    if (arguments.read("--RGB")) windowTraits->swapchainPreferences.surfaceFormat = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
     arguments.read("--screen", windowTraits->screenNum);
     arguments.read("--display", windowTraits->display);
     arguments.read("--samples", windowTraits->samples);

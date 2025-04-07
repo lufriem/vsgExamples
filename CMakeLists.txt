@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.7)
 
 project(vsgExamples
-        VERSION 1.1.1
+        VERSION 1.1.8
         DESCRIPTION "Set of example programs that test and illustrate how to use the VulkanSceneGraph"
         LANGUAGES CXX C
 )
@@ -21,13 +21,13 @@ if (VULKAN_SDK)
     set(ENV{VULKAN_SDK} ${VULKAN_SDK})
 endif()
 
-find_package(vsg 1.1.1)
+find_package(vsg 1.1.10)
 
 vsg_setup_dir_vars()
 vsg_setup_build_vars()
 
 # find the optional vsgXchange that can be used for reading a range of image and 3d model formats and shader compilation
-find_package(vsgXchange 1.0.5 QUIET)
+find_package(vsgXchange 1.1.6 QUIET)
 
 # find the optional vsgImGui that can be used for GUI elements added into graphics windows.
 find_package(vsgImGui QUIET)
@@ -68,23 +68,27 @@ endif()
 # install data
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data/ DESTINATION share/vsgExamples)
 
-# pure VSG examples
-add_subdirectory(examples/core)
-add_subdirectory(examples/maths)
-add_subdirectory(examples/io)
-add_subdirectory(examples/ui)
-add_subdirectory(examples/state)
-add_subdirectory(examples/commands)
-add_subdirectory(examples/nodes)
-add_subdirectory(examples/threading)
-add_subdirectory(examples/app)
-add_subdirectory(examples/vk)
-add_subdirectory(examples/text)
-add_subdirectory(examples/meshshaders)
-add_subdirectory(examples/raytracing)
-add_subdirectory(examples/platform)
-add_subdirectory(examples/utils)
-add_subdirectory(examples/volume)
+# VSG examples
 add_subdirectory(examples/animation)
+add_subdirectory(examples/app)
+add_subdirectory(examples/commands)
+add_subdirectory(examples/core)
+add_subdirectory(examples/io)
+add_subdirectory(examples/lighting)
+add_subdirectory(examples/maths)
+add_subdirectory(examples/meshshaders)
+add_subdirectory(examples/nodes)
+add_subdirectory(examples/platform)
+add_subdirectory(examples/raytracing)
+add_subdirectory(examples/state)
+add_subdirectory(examples/text)
+add_subdirectory(examples/threading)
+add_subdirectory(examples/ui)
+add_subdirectory(examples/utils)
+add_subdirectory(examples/vk)
+add_subdirectory(examples/volume)
+
+# VSG tests
+add_subdirectory(tests)
 
 vsg_add_feature_summary()

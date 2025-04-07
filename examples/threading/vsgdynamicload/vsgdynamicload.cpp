@@ -26,7 +26,7 @@ vsg::ref_ptr<vsg::Node> decorateWithInstrumentationNode(vsg::ref_ptr<vsg::Node> 
 
 struct Merge : public vsg::Inherit<vsg::Operation, Merge>
 {
-    Merge(const vsg::Path& in_path, vsg::observer_ptr<vsg::Viewer> in_viewer, vsg::ref_ptr<vsg::Group> in_attachmentPoint, vsg::ref_ptr<vsg::Node> in_node, const vsg::CompileResult& in_compileResult):
+    Merge(const vsg::Path& in_path, vsg::observer_ptr<vsg::Viewer> in_viewer, vsg::ref_ptr<vsg::Group> in_attachmentPoint, vsg::ref_ptr<vsg::Node> in_node, const vsg::CompileResult& in_compileResult) :
         path(in_path),
         viewer(in_viewer),
         attachmentPoint(in_attachmentPoint),
@@ -42,7 +42,7 @@ struct Merge : public vsg::Inherit<vsg::Operation, Merge>
 
     void run() override
     {
-        std::cout<<"Merge::run() path = "<<path<<", "<<attachmentPoint<<", "<<node<<std::endl;
+        std::cout << "Merge::run() path = " << path << ", " << attachmentPoint << ", " << node << std::endl;
 
         vsg::ref_ptr<vsg::Viewer> ref_viewer = viewer;
         if (ref_viewer)
@@ -53,12 +53,11 @@ struct Merge : public vsg::Inherit<vsg::Operation, Merge>
             {
                 // find any animation groups in the loaded scene graph and play the first animation in each of the animation groups.
                 auto animationGroups = vsg::visit<vsg::FindAnimations>(node).animationGroups;
-                for(auto ag : animationGroups)
+                for (auto ag : animationGroups)
                 {
                     if (!ag->animations.empty()) ref_viewer->animationManager->play(ag->animations.front());
                 }
             }
-
         }
 
         attachmentPoint->addChild(node);
@@ -156,19 +155,31 @@ int main(int argc, char** argv)
 
             instrumentation = gpu_instrumentation;
         }
+        else if (arguments.read({"--profiler", "--pr"}))
+        {
+            // set Profiler options
+            auto settings = vsg::Profiler::Settings::create();
+            arguments.read("--cpu", settings->cpu_instrumentation_level);
+            arguments.read("--gpu", settings->gpu_instrumentation_level);
+            arguments.read("--log-size", settings->log_size);
+            arguments.read("--gpu-size", settings->gpu_timestamp_size);
+
+            // create the profiler
+            instrumentation = vsg::Profiler::create(settings);
+        }
 #ifdef Tracy_FOUND
         else if (arguments.read("--tracy"))
         {
             windowTraits->deviceExtensionNames.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
 
             auto tracy_instrumentation = vsg::TracyInstrumentation::create();
-            arguments.read("--cpu", tracy_instrumentation->settings->cpu_instumentation_level);
-            arguments.read("--gpu", tracy_instrumentation->settings->gpu_instumentation_level);
+            arguments.read("--cpu", tracy_instrumentation->settings->cpu_instrumentation_level);
+            arguments.read("--gpu", tracy_instrumentation->settings->gpu_instrumentation_level);
             instrumentation = tracy_instrumentation;
         }
 #endif
 
-    if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
+        if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
 
         if (argc <= 1)
         {
@@ -186,7 +197,6 @@ int main(int argc, char** argv)
             return 1;
         }
 
-
         // create the viewer and assign window(s) to it
         auto viewer = vsg::Viewer::create();
 
@@ -197,7 +207,7 @@ int main(int argc, char** argv)
         vsg::dvec3 primary(2.0, 0.0, 0.0);
         vsg::dvec3 secondary(0.0, 2.0, 0.0);
 
-        int numModels = static_cast<float>(argc - 1);
+        int numModels = argc - 1;
         int numColumns = static_cast<int>(std::ceil(std::sqrt(static_cast<float>(numModels))));
         int numRows = static_cast<int>(std::ceil(static_cast<float>(numModels) / static_cast<float>(numColumns)));
 
@@ -262,6 +272,12 @@ int main(int argc, char** argv)
             viewer->present();
 
             // if (loadThreads->queue->empty()) break;
+        }
+
+        if (auto profiler = instrumentation.cast<vsg::Profiler>())
+        {
+            instrumentation->finish();
+            profiler->log->report(std::cout);
         }
     }
     catch (const vsg::Exception& ve)

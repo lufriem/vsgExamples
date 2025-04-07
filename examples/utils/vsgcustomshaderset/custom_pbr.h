@@ -7,11 +7,11 @@ namespace custom
     // OpenGL style fog struct to pass to the GPU
     struct Fog
     {
-        vsg::vec3 color = {1.0, 1.0, 1.0};
-        float density = 0.05; // OpenGL default is 1.0!
-        float start = 0.0;
-        float end = 1.0;
-        float exponent = 1.0;
+        vsg::vec3 color = {1.0f, 1.0f, 1.0f};
+        float density = 0.05f; // OpenGL default is 1.0!
+        float start = 0.0f;
+        float end = 1.0f;
+        float exponent = 1.0f;
 
         void read(vsg::Input& input)
         {
@@ -35,9 +35,12 @@ namespace custom
     using FogValue = vsg::Value<Fog>;
 
     extern vsg::ref_ptr<vsg::ShaderSet> pbr_ShaderSet(vsg::ref_ptr<const vsg::Options> options);
-}
+} // namespace custom
 
 template<>
-constexpr bool vsg::has_read_write<custom::Fog>() { return true; }
+constexpr bool vsg::has_read_write<custom::Fog>()
+{
+    return true;
+}
 
 EVSG_type_name(custom::FogValue);
